@@ -1,62 +1,68 @@
-"""
-Modelos Pydantic para búsqueda.
+﻿"""
+Modelos Pydantic para el pipeline de indexacion.
 
-SearchQuery: lo que el usuario pide.
-SearchResult: un resultado individual.
-SearchResponse: respuesta completa con timing.
+IndexStage: etapa actual del pipeline.
+IndexProgress: estado en tiempo real para la UI.
+IndexResult: resumen final al completar.
 
 Uso:
-    from models.search import SearchQuery, SearchResult, SearchResponse
+    from models.indexing import IndexStage, IndexProgress, IndexResult
 """
 
 from __future__ import annotations
 
-from datetime import timedelta
+from enum import Enum
 
-from pydantic import BaseModel, ConfigDict, computed_field
-
-
-class SearchQuery(BaseModel):
-    """Consulta de búsqueda del usuario."""
-
-    text: str
-    n_results: int = 30
-    min_score: float = 0.0
-    class_filter: str | None = None
-    video_filter: str | None = None
-
-    model_config = ConfigDict(frozen=True)
+from pydantic import BaseModel, ConfigDict
 
 
-class SearchResult(BaseModel):
-    """Un resultado individual de búsqueda desde ChromaDB."""
+class IndexStage(str, Enum):
+    """Etapa actual del pipeline de indexacion."""
 
-    crop_id: str
-    score: float
-    class_name: str
-    confidence: float
-    timestamp_seconds: float
+    IDLE = "idle"
+    EXTRACTING_FRAMES = "extracting_frames"
+    DETECTING = "detecting"
+    EMBEDDING = "embedding"
+    DESCRIBING = "describing"
+    STORING = "storing"
+    COMPLETED = "completed"
+    ERROR = "error"
+    CANCELLED = "cancelled"
+    PAUSED = "paused"
+
+
+class IndexProgress(BaseModel):
+    """
+    Estado actual del pipeline — emitido cada frame procesado.
+
+    La UI lee este modelo para actualizar las 4 barras de progreso,
+    los contadores y el tiempo estimado.
+    """
+
+    stage: IndexStage = IndexStage.IDLE
+    frames_total: int = 0
+    frames_processed: int = 0
+    detections_total: int = 0
+    detections_processed: int = 0
+    crops_stored: int = 0
+    elapsed_seconds: float = 0.0
+    estimated_remaining_seconds: float = 0.0
+    fps_processing: float = 0.0
+    current_frame_path: str = ""
+    error_message: str = ""
+
+    model_config = ConfigDict(frozen=False)
+
+
+class IndexResult(BaseModel):
+    """Resumen final despues de indexar un video completo."""
+
     video_source: str
-    frame_path: str
-    crop_path: str
-    description: str = ""
-    bbox: str = ""
-
-    model_config = ConfigDict(frozen=True)
-
-    @computed_field
-    @property
-    def timestamp_formatted(self) -> str:
-        """Timestamp legible como HH:MM:SS."""
-        return str(timedelta(seconds=int(self.timestamp_seconds)))
-
-
-class SearchResponse(BaseModel):
-    """Respuesta completa de una búsqueda con timing."""
-
-    query: str
-    results: list[SearchResult]
-    total_results: int
-    elapsed_ms: int
+    total_frames: int
+    total_detections: int
+    total_stored: int
+    elapsed_seconds: float
+    fps_processing: float
+    collection_total: int
 
     model_config = ConfigDict(frozen=True)

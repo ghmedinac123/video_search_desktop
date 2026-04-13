@@ -1,121 +1,100 @@
-"""
-Implementación concreta de detector usando YOLOv11.
+﻿"""
+Implementacion concreta de embedder usando Jina CLIP v2.
 
-Hereda de BaseDetector. El ModelManager no sabe que esto es YOLO,
-solo ve la interfaz BaseDetector con .detect(), .load(), .unload().
+Hereda de BaseEmbedder. Genera embeddings tanto de imagenes como
+de texto, permitiendo buscar imagenes por descripcion textual.
 
 Uso (via ModelManager, nunca directo):
-    detector = YOLODetector(model_path="yolo11m.pt")
-    detector.load(device="cuda")
-    crops = detector.detect(frame, confidence=0.45)
-    detector.unload()
+    embedder = CLIPEmbedder(model_name="jinaai/jina-clip-v2")
+    embedder.load(device="cuda")
+    img_emb = embedder.embed_image(crop_bgr)
+    txt_emb = embedder.embed_text("mujer camisa roja")
+    embedder.unload()
 """
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import cv2
 import numpy as np
+from PIL import Image
 
-from core.detectors.base_detector import BaseDetector
+from core.embedders.base_embedder import BaseEmbedder
 from core.logger import logger
-from models.detection import BoundingBox, CropData
-from models.settings import get_settings
 
 
-class YOLODetector(BaseDetector):
-    """Detector de objetos basado en Ultralytics YOLOv11."""
+class CLIPEmbedder(BaseEmbedder):
+    """Generador de embeddings multilingue basado en Jina CLIP v2."""
 
-    def __init__(self, model_path: str = "yolo11m.pt") -> None:
+    def __init__(self, model_name: str = "jinaai/jina-clip-v2") -> None:
         """
         Args:
-            model_path: Nombre del archivo .pt (se auto-descarga).
+            model_name: Repo HuggingFace del modelo CLIP.
         """
-        self._model_path = model_path
+        self._model_name = model_name
         self._model = None
         self._device: str = "cpu"
 
     def load(self, device: str = "cuda") -> None:
-        """Carga el modelo YOLO en GPU/CPU."""
-        from ultralytics import YOLO
+        """Carga el modelo CLIP en GPU/CPU."""
+        from sentence_transformers import SentenceTransformer
 
         self._device = device
-        self._model = YOLO(self._model_path)
+        self._model = SentenceTransformer(
+            self._model_name,
+            trust_remote_code=True,
+            device=self._device,
+        )
 
-        # Warmup: primera inferencia inicializa CUDA kernels
-        dummy = np.zeros((640, 640, 3), dtype=np.uint8)
-        self._model(dummy, device=self._device, verbose=False)
-
-        logger.info(f"YOLODetector cargado: {self._model_path} en {device}")
+        # Warmup
+        self._model.encode("warmup")
+        logger.info(f"CLIPEmbedder cargado: {self._model_name} en {device}")
 
     def unload(self) -> None:
         """Libera el modelo de memoria."""
         if self._model is not None:
             del self._model
             self._model = None
-            logger.debug(f"YOLODetector descargado: {self._model_path}")
+            logger.debug(f"CLIPEmbedder descargado: {self._model_name}")
 
-    def detect(
-        self,
-        frame: np.ndarray,
-        confidence: float = 0.45,
-    ) -> list[CropData]:
+    def embed_image(self, image: np.ndarray) -> list[float]:
         """
-        Detecta objetos en un frame y retorna crops recortados.
+        Genera embedding de una imagen (crop BGR).
 
         Args:
-            frame: Imagen BGR numpy array.
-            confidence: Confianza mínima YOLO.
+            image: Imagen BGR numpy array (formato OpenCV).
 
         Returns:
-            Lista de CropData con cada detección.
+            Vector de embedding como lista de floats.
         """
         if self._model is None:
-            raise RuntimeError("YOLODetector no está cargado. Llama .load() primero.")
+            raise RuntimeError("CLIPEmbedder no esta cargado. Llama .load() primero.")
 
-        settings = get_settings()
-        results = self._model(frame, conf=confidence, verbose=False)
-        crops: list[CropData] = []
-        h, w = frame.shape[:2]
+        rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        pil_img = Image.fromarray(rgb)
+        embedding = self._model.encode(pil_img)
+        return embedding.tolist()
 
-        for det_idx, box in enumerate(results[0].boxes):
-            x1, y1, x2, y2 = map(int, box.xyxy[0].tolist())
-            conf = float(box.conf[0])
-            class_name = results[0].names[int(box.cls[0])]
+    def embed_text(self, text: str) -> list[float]:
+        """
+        Genera embedding de un texto (query de busqueda).
 
-            # Aplicar padding al crop
-            pad = settings.crop_padding
-            cx1 = max(0, x1 - pad)
-            cy1 = max(0, y1 - pad)
-            cx2 = min(w, x2 + pad)
-            cy2 = min(h, y2 + pad)
+        Args:
+            text: Texto en lenguaje natural (espanol o ingles).
 
-            crop_img = frame[cy1:cy2, cx1:cx2]
+        Returns:
+            Vector de embedding como lista de floats.
+        """
+        if self._model is None:
+            raise RuntimeError("CLIPEmbedder no esta cargado. Llama .load() primero.")
 
-            # Filtrar crops demasiado pequeños
-            if (crop_img.shape[0] < settings.min_crop_size or
-                    crop_img.shape[1] < settings.min_crop_size):
-                continue
-
-            crops.append(CropData(
-                crop_id="",  # Se asigna después en el Indexer
-                class_name=class_name,
-                confidence=round(conf, 4),
-                bbox=BoundingBox(x1=x1, y1=y1, x2=x2, y2=y2),
-                crop_path=Path("."),  # Se asigna después en el Indexer
-                frame_path=Path("."),  # Se asigna después en el Indexer
-                video_source=Path("."),  # Se asigna después en el Indexer
-                timestamp_seconds=0.0,  # Se asigna después en el Indexer
-            ))
-
-        return crops
+        embedding = self._model.encode(text)
+        return embedding.tolist()
 
     def is_loaded(self) -> bool:
-        """True si el modelo está en memoria."""
+        """True si el modelo esta en memoria."""
         return self._model is not None
 
     @property
     def model_name(self) -> str:
         """Nombre para logging y UI."""
-        return f"YOLO ({self._model_path})"
+        return f"Jina CLIP v2 ({self._model_name})"
