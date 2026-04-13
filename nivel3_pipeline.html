@@ -1,0 +1,885 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Nivel 3: YOLO + CLIP + Gemini + ChromaDB</title>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=DM+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #06080f;
+    --surface: #0f1420;
+    --surface2: #161d2e;
+    --surface3: #1c2540;
+    --border: #243049;
+    --text: #e4eaf4;
+    --text-dim: #7b8ba8;
+    --yolo: #ef4444;
+    --yolo-glow: rgba(239, 68, 68, 0.15);
+    --clip: #06b6d4;
+    --clip-glow: rgba(6, 182, 212, 0.15);
+    --gemini: #8b5cf6;
+    --gemini-glow: rgba(139, 92, 246, 0.15);
+    --chroma: #f59e0b;
+    --chroma-glow: rgba(245, 158, 11, 0.15);
+    --green: #10b981;
+    --green-glow: rgba(16, 185, 129, 0.15);
+    --pink: #ec4899;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: 'DM Sans', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+  }
+
+  .container {
+    max-width: 1000px;
+    margin: 0 auto;
+    padding: 32px 20px;
+  }
+
+  .header {
+    text-align: center;
+    margin-bottom: 40px;
+  }
+
+  .header h1 {
+    font-size: 1.8rem;
+    font-weight: 800;
+    margin-bottom: 8px;
+    letter-spacing: -0.5px;
+  }
+
+  .header p {
+    color: var(--text-dim);
+    font-size: 0.9rem;
+  }
+
+  /* Technology legend */
+  .legend {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    justify-content: center;
+    margin-bottom: 36px;
+  }
+
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 14px;
+    background: var(--surface);
+    border-radius: 99px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    border: 1px solid var(--border);
+  }
+
+  .legend-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+  }
+
+  /* Mode tabs */
+  .mode-tabs {
+    display: flex;
+    gap: 4px;
+    background: var(--surface);
+    border-radius: 14px;
+    padding: 4px;
+    margin-bottom: 32px;
+    border: 1px solid var(--border);
+  }
+
+  .mode-tab {
+    flex: 1;
+    padding: 14px;
+    text-align: center;
+    border-radius: 10px;
+    cursor: pointer;
+    font-weight: 700;
+    font-size: 0.85rem;
+    color: var(--text-dim);
+    transition: all 0.3s;
+  }
+
+  .mode-tab:hover { color: var(--text); background: var(--surface2); }
+
+  .mode-tab.active {
+    background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+    color: white;
+    box-shadow: 0 4px 20px rgba(59, 130, 246, 0.3);
+  }
+
+  .mode-tab small {
+    display: block;
+    font-weight: 500;
+    font-size: 0.7rem;
+    margin-top: 2px;
+    opacity: 0.8;
+  }
+
+  .mode-content { display: none; animation: fadeUp 0.4s ease; }
+  .mode-content.active { display: block; }
+
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(12px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  /* Pipeline nodes */
+  .pipeline {
+    position: relative;
+  }
+
+  .node {
+    position: relative;
+    display: flex;
+    gap: 16px;
+    padding: 20px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    margin-bottom: 0;
+    transition: all 0.3s;
+  }
+
+  .node:hover {
+    border-color: var(--clip);
+    transform: translateX(4px);
+  }
+
+  .node-badge {
+    position: absolute;
+    top: -10px;
+    left: 20px;
+    font-size: 0.6rem;
+    font-weight: 700;
+    padding: 2px 10px;
+    border-radius: 99px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+  }
+
+  .badge-local {
+    background: var(--green);
+    color: #000;
+  }
+
+  .badge-api {
+    background: var(--gemini);
+    color: white;
+  }
+
+  .badge-storage {
+    background: var(--chroma);
+    color: #000;
+  }
+
+  .node-icon {
+    width: 52px;
+    height: 52px;
+    border-radius: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.5rem;
+    flex-shrink: 0;
+  }
+
+  .node-body { flex: 1; min-width: 0; }
+  .node-body h3 { font-size: 0.95rem; font-weight: 700; margin-bottom: 4px; }
+  .node-body .tech-name { font-size: 0.7rem; font-weight: 600; margin-bottom: 6px; display: inline-block; padding: 2px 8px; border-radius: 4px; }
+  .node-body p { font-size: 0.82rem; color: var(--text-dim); line-height: 1.6; }
+
+  .icon-yolo { background: var(--yolo-glow); border: 1px solid rgba(239, 68, 68, 0.3); }
+  .icon-clip { background: var(--clip-glow); border: 1px solid rgba(6, 182, 212, 0.3); }
+  .icon-gemini { background: var(--gemini-glow); border: 1px solid rgba(139, 92, 246, 0.3); }
+  .icon-chroma { background: var(--chroma-glow); border: 1px solid rgba(245, 158, 11, 0.3); }
+  .icon-green { background: var(--green-glow); border: 1px solid rgba(16, 185, 129, 0.3); }
+  .icon-source { background: rgba(236, 72, 153, 0.12); border: 1px solid rgba(236, 72, 153, 0.3); }
+
+  .tech-yolo { background: var(--yolo-glow); color: var(--yolo); }
+  .tech-clip { background: var(--clip-glow); color: var(--clip); }
+  .tech-gemini { background: var(--gemini-glow); color: var(--gemini); }
+  .tech-chroma { background: var(--chroma-glow); color: var(--chroma); }
+  .tech-green { background: var(--green-glow); color: var(--green); }
+
+  /* Connector arrow */
+  .connector {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 6px 0;
+    position: relative;
+  }
+
+  .connector-line {
+    width: 2px;
+    height: 28px;
+    background: linear-gradient(to bottom, var(--border), var(--clip));
+    position: relative;
+  }
+
+  .connector-line::after {
+    content: '▼';
+    position: absolute;
+    bottom: -10px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 0.7rem;
+    color: var(--clip);
+  }
+
+  .connector-label {
+    position: absolute;
+    right: 20px;
+    font-size: 0.65rem;
+    color: var(--text-dim);
+    background: var(--bg);
+    padding: 2px 8px;
+    border-radius: 4px;
+    border: 1px solid var(--border);
+    font-family: 'JetBrains Mono', monospace;
+  }
+
+  /* Data box inside nodes */
+  .data-box {
+    margin-top: 12px;
+    padding: 12px;
+    background: var(--bg);
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.7rem;
+    line-height: 1.7;
+    overflow-x: auto;
+  }
+
+  .data-box .key { color: var(--clip); }
+  .data-box .val { color: var(--green); }
+  .data-box .comment { color: var(--text-dim); font-style: italic; }
+
+  /* Visual crop illustration */
+  .crop-grid {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    gap: 12px;
+    align-items: center;
+    margin-top: 12px;
+  }
+
+  .crop-frame {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px;
+    text-align: center;
+    position: relative;
+    min-height: 90px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .crop-frame .big-emoji { font-size: 2.5rem; }
+  .crop-frame .frame-label { font-size: 0.65rem; color: var(--text-dim); }
+
+  .crop-results {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .crop-person {
+    background: var(--bg);
+    border: 2px solid var(--yolo);
+    border-radius: 8px;
+    padding: 8px 12px;
+    text-align: center;
+    font-size: 1.2rem;
+    position: relative;
+  }
+
+  .crop-person .crop-label {
+    font-size: 0.6rem;
+    color: var(--yolo);
+    font-weight: 600;
+  }
+
+  .crop-arrow {
+    font-size: 1.5rem;
+    color: var(--yolo);
+  }
+
+  /* Similarity bars */
+  .sim-section { margin-top: 16px; }
+
+  .sim-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 6px;
+  }
+
+  .sim-label {
+    font-size: 0.72rem;
+    width: 180px;
+    flex-shrink: 0;
+    color: var(--text-dim);
+  }
+
+  .sim-bar-bg {
+    flex: 1;
+    height: 22px;
+    background: var(--surface2);
+    border-radius: 6px;
+    overflow: hidden;
+  }
+
+  .sim-bar-fill {
+    height: 100%;
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    padding-right: 8px;
+    font-size: 0.65rem;
+    font-weight: 700;
+    color: white;
+    transition: width 0.8s ease;
+  }
+
+  .fill-high { background: linear-gradient(90deg, #10b981, #34d399); }
+  .fill-mid { background: linear-gradient(90deg, #f59e0b, #fbbf24); }
+  .fill-low { background: linear-gradient(90deg, #ef4444, #f87171); }
+
+  /* Info callout */
+  .callout {
+    margin-top: 20px;
+    padding: 16px 20px;
+    border-radius: 12px;
+    border-left: 4px solid;
+    font-size: 0.82rem;
+    line-height: 1.6;
+  }
+
+  .callout h4 { font-size: 0.85rem; margin-bottom: 6px; }
+
+  .callout-blue {
+    background: rgba(59, 130, 246, 0.08);
+    border-color: #3b82f6;
+  }
+  .callout-blue h4 { color: #3b82f6; }
+  .callout-blue p { color: var(--text-dim); }
+
+  .callout-purple {
+    background: rgba(139, 92, 246, 0.08);
+    border-color: var(--gemini);
+  }
+  .callout-purple h4 { color: var(--gemini); }
+  .callout-purple p { color: var(--text-dim); }
+
+  .callout-green {
+    background: rgba(16, 185, 129, 0.08);
+    border-color: var(--green);
+  }
+  .callout-green h4 { color: var(--green); }
+  .callout-green p { color: var(--text-dim); }
+
+  /* Parallel process indicator */
+  .parallel-wrap {
+    border: 2px dashed var(--border);
+    border-radius: 16px;
+    padding: 16px;
+    margin: 0;
+    position: relative;
+  }
+
+  .parallel-label {
+    position: absolute;
+    top: -12px;
+    left: 24px;
+    background: var(--bg);
+    padding: 2px 12px;
+    font-size: 0.7rem;
+    font-weight: 700;
+    color: var(--text-dim);
+    border-radius: 4px;
+  }
+
+  .parallel-nodes {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+  }
+
+  .parallel-nodes .node { margin-bottom: 0; }
+
+  /* Gemini example */
+  .gemini-example {
+    margin-top: 12px;
+    padding: 12px;
+    background: var(--bg);
+    border: 1px solid rgba(139, 92, 246, 0.3);
+    border-radius: 8px;
+  }
+
+  .gemini-input, .gemini-output {
+    padding: 8px 12px;
+    border-radius: 6px;
+    font-size: 0.75rem;
+    margin-bottom: 6px;
+  }
+
+  .gemini-input {
+    background: var(--surface2);
+    color: var(--text-dim);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .gemini-input .img-placeholder {
+    width: 40px;
+    height: 50px;
+    background: var(--surface3);
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.2rem;
+    flex-shrink: 0;
+  }
+
+  .gemini-output {
+    background: rgba(139, 92, 246, 0.1);
+    color: var(--gemini);
+    border: 1px solid rgba(139, 92, 246, 0.2);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.72rem;
+    line-height: 1.6;
+  }
+
+  .gemini-arrow {
+    text-align: center;
+    color: var(--gemini);
+    font-size: 0.9rem;
+    padding: 4px 0;
+  }
+
+  /* Section title */
+  .section-title {
+    font-size: 1.1rem;
+    font-weight: 800;
+    margin: 32px 0 16px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .section-title .line {
+    flex: 1;
+    height: 1px;
+    background: var(--border);
+  }
+
+  /* Cost box */
+  .cost-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    margin-top: 16px;
+  }
+
+  .cost-card {
+    padding: 16px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+  }
+
+  .cost-card h4 { font-size: 0.85rem; margin-bottom: 4px; }
+  .cost-card .price { font-size: 1.4rem; font-weight: 800; margin: 8px 0; }
+  .cost-card p { font-size: 0.75rem; color: var(--text-dim); }
+
+  .price-free { color: var(--green); }
+  .price-cheap { color: var(--chroma); }
+
+  @media (max-width: 700px) {
+    .parallel-nodes { grid-template-columns: 1fr; }
+    .crop-grid { grid-template-columns: 1fr; }
+    .cost-grid { grid-template-columns: 1fr; }
+    .legend { gap: 4px; }
+    .legend-item { font-size: 0.65rem; padding: 4px 10px; }
+  }
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="header">
+    <h1>🔬 Nivel 3: Pipeline Completo</h1>
+    <p>YOLO + CLIP + Gemini 2.5 Flash + ChromaDB</p>
+  </div>
+
+  <div class="legend">
+    <div class="legend-item"><div class="legend-dot" style="background:var(--yolo)"></div>YOLOv8 — Detección</div>
+    <div class="legend-item"><div class="legend-dot" style="background:var(--clip)"></div>CLIP — Embeddings</div>
+    <div class="legend-item"><div class="legend-dot" style="background:var(--gemini)"></div>Gemini Flash — Descripciones</div>
+    <div class="legend-item"><div class="legend-dot" style="background:var(--chroma)"></div>ChromaDB — Base vectorial</div>
+    <div class="legend-item"><div class="legend-dot" style="background:var(--green)"></div>FFmpeg/Python — Orquestador</div>
+  </div>
+
+  <div class="mode-tabs">
+    <div class="mode-tab active" onclick="showMode(0)">📥 Indexación<small>Procesar videos</small></div>
+    <div class="mode-tab" onclick="showMode(1)">🔍 Búsqueda<small>Consultar</small></div>
+    <div class="mode-tab" onclick="showMode(2)">💰 Costos<small>Gemini API</small></div>
+  </div>
+
+  <!-- ========== INDEXACIÓN ========== -->
+  <div class="mode-content active" id="mode-0">
+
+    <div class="section-title">
+      Fase de Indexación <span class="line"></span>
+    </div>
+
+    <!-- Step 1: Video source -->
+    <div class="node">
+      <div class="node-badge badge-local">LOCAL</div>
+      <div class="node-icon icon-source">📹</div>
+      <div class="node-body">
+        <h3>① Video original del DVR</h3>
+        <span class="node-body tech-name tech-green">FFmpeg</span>
+        <p>Se toma el video exportado del DVR y FFmpeg extrae <strong>1 frame cada 2 segundos</strong>. Los frames se guardan como JPG en disco con su timestamp.</p>
+        <div class="data-box">
+          <span class="comment"># Extraer frames del video</span><br>
+          ffmpeg -i <span class="val">cam01_2025-02-25.mp4</span> -vf <span class="val">"fps=0.5"</span> -q:v 2 <span class="val">frames/cam01_%06d.jpg</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="connector"><div class="connector-line"></div><span class="connector-label">frames JPG</span></div>
+
+    <!-- Step 2: YOLO -->
+    <div class="node" style="border-color: rgba(239,68,68,0.3);">
+      <div class="node-badge badge-local">LOCAL — GPU</div>
+      <div class="node-icon icon-yolo">🎯</div>
+      <div class="node-body">
+        <h3>② YOLO detecta y recorta objetos</h3>
+        <span class="node-body tech-name tech-yolo">YOLOv8 / YOLOv11</span>
+        <p>YOLO analiza cada frame y detecta personas, vehículos, animales, etc. Por cada objeto detectado, <strong>recorta (crop) la región</strong> de la imagen donde está ese objeto. Un frame con 3 personas genera 3 recortes individuales.</p>
+        
+        <div class="crop-grid">
+          <div class="crop-frame">
+            <div class="big-emoji">🖼️</div>
+            <div class="frame-label">Frame completo<br>3 personas visibles</div>
+          </div>
+          <div class="crop-arrow">→</div>
+          <div class="crop-results">
+            <div class="crop-person">👩<div class="crop-label">crop_001 (persona)</div></div>
+            <div class="crop-person">👨<div class="crop-label">crop_002 (persona)</div></div>
+            <div class="crop-person">👦<div class="crop-label">crop_003 (persona)</div></div>
+          </div>
+        </div>
+
+        <div class="data-box" style="margin-top: 12px;">
+          <span class="comment"># YOLO retorna por cada detección:</span><br>
+          {<br>
+          &nbsp;&nbsp;<span class="key">"class"</span>: <span class="val">"person"</span>,<br>
+          &nbsp;&nbsp;<span class="key">"confidence"</span>: <span class="val">0.94</span>,<br>
+          &nbsp;&nbsp;<span class="key">"bbox"</span>: <span class="val">[120, 45, 380, 520]</span>, <span class="comment">// x1,y1,x2,y2</span><br>
+          &nbsp;&nbsp;<span class="key">"crop_image"</span>: <span class="val">→ imagen recortada de esa persona</span><br>
+          }
+        </div>
+      </div>
+    </div>
+
+    <div class="connector"><div class="connector-line"></div><span class="connector-label">cada crop individual</span></div>
+
+    <!-- Step 3: PARALLEL - CLIP + Gemini -->
+    <div class="parallel-wrap">
+      <div class="parallel-label">⚡ SE EJECUTAN EN PARALELO SOBRE CADA CROP</div>
+      <div class="parallel-nodes">
+        
+        <!-- CLIP -->
+        <div class="node" style="border-color: rgba(6,182,212,0.3);">
+          <div class="node-badge badge-local">LOCAL — GPU</div>
+          <div class="node-icon icon-clip">🧠</div>
+          <div class="node-body">
+            <h3>③a CLIP genera embedding</h3>
+            <span class="tech-name tech-clip">jina-clip-v2</span>
+            <p>Cada crop pasa por CLIP y genera un <strong>vector de 768 dimensiones</strong> que representa visualmente a esa persona/objeto.</p>
+            <div class="data-box">
+              <span class="comment"># Resultado:</span><br>
+              <span class="key">embedding</span> = [<span class="val">0.234, -0.891, 0.567, ... </span>]<br>
+              <span class="comment">// 768 números flotantes</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Gemini -->
+        <div class="node" style="border-color: rgba(139,92,246,0.3);">
+          <div class="node-badge badge-api">API — GOOGLE CLOUD</div>
+          <div class="node-icon icon-gemini">✨</div>
+          <div class="node-body">
+            <h3>③b Gemini describe el crop</h3>
+            <span class="tech-name tech-gemini">Gemini 2.5 Flash</span>
+            <p>El mismo crop se envía a la API de Gemini Flash, que genera una <strong>descripción textual detallada</strong> de lo que ve.</p>
+            
+            <div class="gemini-example">
+              <div class="gemini-input">
+                <div class="img-placeholder">👩</div>
+                <span>"Describe esta persona en detalle: ropa, colores, accesorios, acción, dirección"</span>
+              </div>
+              <div class="gemini-arrow">↓ Gemini responde</div>
+              <div class="gemini-output">
+                "Mujer adulta, aproximadamente 30 años. Camisa roja manga corta, jean azul oscuro, bolso negro en hombro izquierdo, cabello largo oscuro. Caminando hacia la derecha, zona de entrada principal."
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="connector"><div class="connector-line"></div><span class="connector-label">embedding + descripción + metadata</span></div>
+
+    <!-- Step 4: ChromaDB -->
+    <div class="node" style="border-color: rgba(245,158,11,0.3);">
+      <div class="node-badge badge-storage">BASE DE DATOS</div>
+      <div class="node-icon icon-chroma">🗃️</div>
+      <div class="node-body">
+        <h3>④ ChromaDB almacena todo</h3>
+        <span class="tech-name tech-chroma">ChromaDB</span>
+        <p>Se guarda el embedding vectorial de CLIP + la descripción textual de Gemini + toda la metadata. <strong>La imagen NO se guarda aquí</strong>, solo su ruta en disco.</p>
+        <div class="data-box">
+          <span class="comment"># Lo que se almacena POR CADA CROP:</span><br><br>
+          {<br>
+          &nbsp;&nbsp;<span class="key">"id"</span>: <span class="val">"cam01_20250225_142304_crop001"</span>,<br><br>
+          &nbsp;&nbsp;<span class="comment">// Vector de CLIP (para búsqueda vectorial)</span><br>
+          &nbsp;&nbsp;<span class="key">"embedding"</span>: [<span class="val">0.234, -0.891, ...</span>], <span class="comment">// 768D</span><br><br>
+          &nbsp;&nbsp;<span class="comment">// Metadata (para filtrar y recuperar)</span><br>
+          &nbsp;&nbsp;<span class="key">"metadata"</span>: {<br>
+          &nbsp;&nbsp;&nbsp;&nbsp;<span class="key">"camera"</span>: <span class="val">"cam01"</span>,<br>
+          &nbsp;&nbsp;&nbsp;&nbsp;<span class="key">"timestamp"</span>: <span class="val">"2025-02-25T14:23:04"</span>,<br>
+          &nbsp;&nbsp;&nbsp;&nbsp;<span class="key">"class"</span>: <span class="val">"person"</span>,<br>
+          &nbsp;&nbsp;&nbsp;&nbsp;<span class="key">"confidence"</span>: <span class="val">0.94</span>,<br>
+          &nbsp;&nbsp;&nbsp;&nbsp;<span class="key">"crop_path"</span>: <span class="val">"/crops/cam01/.../crop_001.jpg"</span>,<br>
+          &nbsp;&nbsp;&nbsp;&nbsp;<span class="key">"frame_path"</span>: <span class="val">"/frames/cam01/.../frame_042.jpg"</span>,<br>
+          &nbsp;&nbsp;&nbsp;&nbsp;<span class="key">"video_source"</span>: <span class="val">"/videos/cam01_2025-02-25.mp4"</span>,<br>
+          &nbsp;&nbsp;&nbsp;&nbsp;<span class="key">"video_second"</span>: <span class="val">84</span>,<br><br>
+          &nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">// Descripción de Gemini (para búsqueda textual)</span><br>
+          &nbsp;&nbsp;&nbsp;&nbsp;<span class="key">"description"</span>: <span class="val">"Mujer adulta, camisa roja manga corta, jean azul oscuro, bolso negro..."</span><br>
+          &nbsp;&nbsp;}<br>
+          }
+        </div>
+      </div>
+    </div>
+
+    <div class="callout callout-blue">
+      <h4>💡 ¿Por qué guardar AMBOS (embedding + descripción)?</h4>
+      <p>Porque tienes <strong>dos formas de buscar</strong>:<br><br>
+      <strong>1. Búsqueda vectorial (CLIP):</strong> "mujer camisa roja" → se convierte a vector → ChromaDB busca los vectores más cercanos. Bueno para búsquedas visuales generales.<br><br>
+      <strong>2. Búsqueda textual (Gemini):</strong> Buscas en el campo "description" por palabras clave como "bolso negro" o "caminando hacia la derecha". Bueno para detalles específicos que CLIP podría perder.<br><br>
+      Puedes combinar ambas búsquedas para resultados mucho más precisos.</p>
+    </div>
+  </div>
+
+  <!-- ========== BÚSQUEDA ========== -->
+  <div class="mode-content" id="mode-1">
+
+    <div class="section-title">
+      Fase de Búsqueda <span class="line"></span>
+    </div>
+
+    <div class="node">
+      <div class="node-icon icon-green">💬</div>
+      <div class="node-body">
+        <h3>① Usuario escribe consulta</h3>
+        <p>El usuario escribe en lenguaje natural lo que busca.</p>
+        <div class="data-box">
+          <span class="val">"mujer con camisa roja y bolso negro"</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="connector"><div class="connector-line"></div></div>
+
+    <div class="parallel-wrap">
+      <div class="parallel-label">⚡ DOS BÚSQUEDAS EN PARALELO</div>
+      <div class="parallel-nodes">
+        <div class="node" style="border-color: rgba(6,182,212,0.3);">
+          <div class="node-icon icon-clip">🧠</div>
+          <div class="node-body">
+            <h3>②a Búsqueda vectorial</h3>
+            <span class="tech-name tech-clip">CLIP + ChromaDB</span>
+            <p>El texto se convierte a vector con CLIP y ChromaDB busca los embeddings de imágenes más cercanos por <strong>distancia coseno</strong>.</p>
+          </div>
+        </div>
+        <div class="node" style="border-color: rgba(139,92,246,0.3);">
+          <div class="node-icon icon-gemini">📝</div>
+          <div class="node-body">
+            <h3>②b Búsqueda textual</h3>
+            <span class="tech-name tech-gemini">Texto en metadata</span>
+            <p>Se busca en el campo <code style="background:var(--surface2);color:var(--gemini);padding:1px 4px;border-radius:3px;">description</code> de la metadata por coincidencias con "camisa roja", "bolso negro", etc.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="connector"><div class="connector-line"></div><span class="connector-label">combinar resultados</span></div>
+
+    <div class="node">
+      <div class="node-icon icon-chroma">🏆</div>
+      <div class="node-body">
+        <h3>③ Fusionar y rankear resultados</h3>
+        <span class="tech-name tech-chroma">Python</span>
+        <p>Se combinan los resultados de ambas búsquedas. Los crops que aparecen en <strong>ambas listas</strong> se rankean más alto. Se ordenan por relevancia.</p>
+        
+        <div class="sim-section">
+          <div class="sim-row">
+            <span class="sim-label">👩 Mujer, camisa roja, bolso negro</span>
+            <div class="sim-bar-bg"><div class="sim-bar-fill fill-high" style="width:95%">0.95 ✓✓</div></div>
+          </div>
+          <div class="sim-row">
+            <span class="sim-label">👩 Mujer, camisa roja, sin bolso</span>
+            <div class="sim-bar-bg"><div class="sim-bar-fill fill-high" style="width:78%">0.78 ✓</div></div>
+          </div>
+          <div class="sim-row">
+            <span class="sim-label">👨 Hombre, camisa roja</span>
+            <div class="sim-bar-bg"><div class="sim-bar-fill fill-mid" style="width:52%">0.52</div></div>
+          </div>
+          <div class="sim-row">
+            <span class="sim-label">👩 Mujer, camisa azul</span>
+            <div class="sim-bar-bg"><div class="sim-bar-fill fill-low" style="width:31%">0.31</div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="connector"><div class="connector-line"></div><span class="connector-label">top resultados + metadata</span></div>
+
+    <div class="node" style="border-color: rgba(16,185,129,0.3);">
+      <div class="node-icon icon-green">🖼️</div>
+      <div class="node-body">
+        <h3>④ Mostrar resultados al usuario</h3>
+        <p>Con la metadata de ChromaDB se recupera:</p>
+        <div class="data-box">
+          <span class="comment">// Para cada resultado:</span><br><br>
+          <span class="key">crop_path</span> → <span class="val">Mostrar imagen recortada de la persona</span><br>
+          <span class="key">frame_path</span> → <span class="val">Mostrar frame completo para contexto</span><br>
+          <span class="key">video_source + video_second</span> → <span class="val">Reproducir video en ese momento exacto</span><br>
+          <span class="key">camera</span> → <span class="val">Saber de qué cámara viene</span><br>
+          <span class="key">timestamp</span> → <span class="val">Saber cuándo ocurrió</span><br>
+          <span class="key">description</span> → <span class="val">Mostrar descripción textual de Gemini</span><br>
+        </div>
+      </div>
+    </div>
+
+    <div class="callout callout-green">
+      <h4>💡 El resultado final para el usuario</h4>
+      <p>El usuario ve una galería de imágenes recortadas de personas que coinciden con su búsqueda, cada una con: el crop de la persona, el frame completo, la descripción de Gemini, timestamp, cámara, y un botón para reproducir el video en ese momento exacto. Todo como si fuera WizSeeK de Dahua, pero open source.</p>
+    </div>
+  </div>
+
+  <!-- ========== COSTOS ========== -->
+  <div class="mode-content" id="mode-2">
+
+    <div class="section-title">
+      Costos: ¿Gemini API vs LLM Local? <span class="line"></span>
+    </div>
+
+    <div class="callout callout-purple">
+      <h4>✅ Sí, usar Gemini 2.5 Flash por API es la mejor opción para tu caso</h4>
+      <p>No necesitas correr un LLM localmente. Gemini Flash es barato, rápido, y genera descripciones mucho mejores que un modelo local como LLaVA. Todo lo demás (YOLO, CLIP, ChromaDB) corre 100% local en tu PC.</p>
+    </div>
+
+    <div class="cost-grid">
+      <div class="cost-card">
+        <h4>🟢 Corre LOCAL (gratis)</h4>
+        <div class="price price-free">$0</div>
+        <p><strong>YOLO</strong> — Detección de objetos<br>
+        <strong>CLIP / Jina</strong> — Embeddings<br>
+        <strong>ChromaDB</strong> — Base de datos vectorial<br>
+        <strong>FFmpeg</strong> — Extracción de frames<br>
+        <strong>Python</strong> — Orquestador<br><br>
+        Todo open source, todo en tu RTX 5060 Ti</p>
+      </div>
+      <div class="cost-card">
+        <h4>🟣 Gemini 2.5 Flash (API)</h4>
+        <div class="price price-cheap">~$0.01 USD</div>
+        <p><strong>Por cada 1,000 crops analizados</strong><br><br>
+        Gemini 2.5 Flash cobra:<br>
+        • Input: $0.15 / 1M tokens<br>
+        • Output: $0.60 / 1M tokens<br><br>
+        1 hora de video ≈ 1,800 frames<br>
+        ≈ ~3,000 crops (si hay personas)<br>
+        ≈ <strong>~$0.03 USD por hora de video</strong><br><br>
+        24 horas × 6 cámaras = ~$4 USD/día<br>
+        <em>Y eso si procesas TODO. En la práctica, solo procesas frames donde YOLO detectó algo → mucho menos.</em></p>
+      </div>
+    </div>
+
+    <div class="section-title" style="margin-top: 28px;">
+      ¿Qué corre dónde? <span class="line"></span>
+    </div>
+
+    <div class="node" style="border-color: rgba(16,185,129,0.3);">
+      <div class="node-icon icon-green">🖥️</div>
+      <div class="node-body">
+        <h3>Tu PC (Ryzen 9600X + RTX 5060 Ti 16GB)</h3>
+        <div class="data-box">
+          <span class="key">FFmpeg</span> → <span class="val">CPU — extrae frames</span><br>
+          <span class="key">YOLOv8</span> → <span class="val">GPU (CUDA) — detecta objetos ~60 FPS</span><br>
+          <span class="key">CLIP/Jina</span> → <span class="val">GPU (CUDA) — genera embeddings ~100 imgs/seg</span><br>
+          <span class="key">ChromaDB</span> → <span class="val">CPU + RAM — almacena y busca vectores</span><br>
+          <span class="key">Python/FastAPI</span> → <span class="val">CPU — orquesta todo + interfaz web</span><br>
+        </div>
+      </div>
+    </div>
+
+    <div class="connector"><div class="connector-line"></div><span class="connector-label">solo los crops (imágenes pequeñas)</span></div>
+
+    <div class="node" style="border-color: rgba(139,92,246,0.3);">
+      <div class="node-icon icon-gemini">☁️</div>
+      <div class="node-body">
+        <h3>Google Cloud (API remota)</h3>
+        <div class="data-box">
+          <span class="key">Gemini 2.5 Flash</span> → <span class="val">Recibe crop de persona → devuelve descripción textual</span><br><br>
+          <span class="comment">// Solo se envía la imagen recortada (pequeña, ~20KB)</span><br>
+          <span class="comment">// NO se envía el video completo ni el frame completo</span><br>
+          <span class="comment">// La respuesta es solo texto (~50-100 palabras)</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="callout callout-blue" style="margin-top: 20px;">
+      <h4>💡 Optimización de costos</h4>
+      <p>
+        <strong>1.</strong> Solo envías a Gemini los crops donde YOLO detectó algo (no todos los frames vacíos)<br>
+        <strong>2.</strong> Si un crop tiene confidence < 0.7 en YOLO, lo descartas sin enviarlo a Gemini<br>
+        <strong>3.</strong> Puedes procesar solo horarios pico (6am-10pm) y saltarte la madrugada<br>
+        <strong>4.</strong> Si quieres $0 total: reemplazas Gemini por <strong>Ollama + LLaVA 13B</strong> corriendo local en tu GPU, pero las descripciones serán menos detalladas<br>
+      </p>
+    </div>
+
+  </div>
+</div>
+
+<script>
+function showMode(n) {
+  document.querySelectorAll('.mode-content').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.mode-tab').forEach(t => t.classList.remove('active'));
+  document.getElementById('mode-' + n).classList.add('active');
+  document.querySelectorAll('.mode-tab')[n].classList.add('active');
+}
+</script>
+</body>
+</html>
