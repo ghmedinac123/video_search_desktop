@@ -1,19 +1,19 @@
-"""
-Catálogo de modelos de IA + Factory para crear instancias.
+﻿"""
+Catalogo de modelos de IA + Factory para crear instancias.
 
-Responsabilidad ÚNICA: saber qué modelos existen, verificar si están
+Responsabilidad UNICA: saber que modelos existen, verificar si estan
 descargados, descargarlos, y crear la instancia concreta correcta.
 
-El ModelManager le pide al Registry: "dame un describer para qwen2.5-vl-7b-q4"
-y el Registry retorna un QwenDescriber ya instanciado.
+El ModelManager le pide al Registry: "dame un describer para moondream2-4bit"
+y el Registry retorna un MoondreamDescriber ya instanciado.
 
 Uso:
     from core.model_registry import ModelRegistry
 
     registry = ModelRegistry()
     models = registry.get_available_models()
-    registry.download_model("yolo11m", on_progress=callback)
-    detector = registry.create_detector("yolo11m")
+    registry.download_model("yolo26n", on_progress=callback)
+    detector = registry.create_detector("yolo26n")
 """
 
 from __future__ import annotations
@@ -23,42 +23,43 @@ from typing import Callable
 
 from core.logger import logger
 from models.models_ai import AIModelInfo, AIModelType, ModelStatus
+from models.settings import get_settings
 
 # ────────────────────────────────────────────────────────
-# Catálogo de modelos disponibles.
-# Cada entrada define: id, nombre, tipo, repo, VRAM, tamaño.
-# Para agregar un modelo nuevo, solo se añade aquí.
+# Catalogo de modelos disponibles.
+# Para agregar un modelo nuevo, solo se anade aqui.
+# El resto del sistema lo detecta automaticamente.
 # ────────────────────────────────────────────────────────
 _MODEL_CATALOG: list[dict] = [
-    # ── Detectores (YOLO) ──
+    # ── Detectores (YOLO26 — end-to-end, sin NMS) ──
     {
-        "model_id": "yolo11n",
-        "display_name": "YOLOv11 Nano",
+        "model_id": "yolo26n",
+        "display_name": "YOLO26 Nano",
         "model_type": AIModelType.DETECTOR,
-        "repo_id": "yolo11n.pt",
-        "estimated_vram_gb": 0.3,
-        "estimated_size_gb": 0.012,
-        "description": "Rápido, menor precisión. Ideal para GPUs con poca VRAM.",
+        "repo_id": "yolo26n.pt",
+        "estimated_vram_gb": 0.2,
+        "estimated_size_gb": 0.005,
+        "description": "Ultra rapido (~2ms). 2.6M params. Ideal para tiempo real.",
         "language": "N/A",
     },
     {
-        "model_id": "yolo11m",
-        "display_name": "YOLOv11 Medium",
+        "model_id": "yolo26s",
+        "display_name": "YOLO26 Small",
         "model_type": AIModelType.DETECTOR,
-        "repo_id": "yolo11m.pt",
-        "estimated_vram_gb": 0.5,
-        "estimated_size_gb": 0.039,
-        "description": "Balance entre velocidad y precisión. Recomendado.",
+        "repo_id": "yolo26s.pt",
+        "estimated_vram_gb": 0.4,
+        "estimated_size_gb": 0.019,
+        "description": "Balance velocidad/precision (~5ms). 11.2M params.",
         "language": "N/A",
     },
     {
-        "model_id": "yolo11x",
-        "display_name": "YOLOv11 Extra Large",
+        "model_id": "yolo26m",
+        "display_name": "YOLO26 Medium",
         "model_type": AIModelType.DETECTOR,
-        "repo_id": "yolo11x.pt",
-        "estimated_vram_gb": 1.0,
-        "estimated_size_gb": 0.110,
-        "description": "Máxima precisión. Requiere más VRAM.",
+        "repo_id": "yolo26m.pt",
+        "estimated_vram_gb": 0.6,
+        "estimated_size_gb": 0.042,
+        "description": "Maxima precision (~12ms). 25.4M params.",
         "language": "N/A",
     },
     # ── Embedders (CLIP) ──
@@ -69,7 +70,7 @@ _MODEL_CATALOG: list[dict] = [
         "repo_id": "jinaai/jina-clip-v2",
         "estimated_vram_gb": 3.5,
         "estimated_size_gb": 1.7,
-        "description": "Embeddings multilingües imagen↔texto. Requerido para búsqueda.",
+        "description": "Embeddings multilingues imagen y texto. Requerido para busqueda.",
         "language": "multilingual",
     },
     # ── Describers (VLM) ──
@@ -80,7 +81,7 @@ _MODEL_CATALOG: list[dict] = [
         "repo_id": "Qwen/Qwen2.5-VL-7B-Instruct",
         "estimated_vram_gb": 5.5,
         "estimated_size_gb": 4.5,
-        "description": "Descripciones en español, detalladas. ~500ms/crop.",
+        "description": "Descripciones en espanol, detalladas. ~500ms/crop.",
         "language": "es",
     },
     {
@@ -90,7 +91,7 @@ _MODEL_CATALOG: list[dict] = [
         "repo_id": "moondream/moondream-2b-2025-04-14-4bit",
         "estimated_vram_gb": 2.5,
         "estimated_size_gb": 1.2,
-        "description": "Descripciones en inglés, rápido. ~130ms/crop.",
+        "description": "Descripciones en ingles, rapido. ~130ms/crop.",
         "language": "en",
     },
 ]
@@ -98,14 +99,14 @@ _MODEL_CATALOG: list[dict] = [
 
 class ModelRegistry:
     """
-    Catálogo de modelos + Factory para crear instancias concretas.
+    Catalogo de modelos + Factory para crear instancias concretas.
 
-    Patrón Factory Method: según el model_id, crea la clase correcta
+    Patron Factory Method: segun el model_id, crea la clase correcta
     (YOLODetector, CLIPEmbedder, QwenDescriber, MoondreamDescriber).
     """
 
     def __init__(self) -> None:
-        """Inicializa el catálogo desde _MODEL_CATALOG."""
+        """Inicializa el catalogo desde _MODEL_CATALOG."""
         self._models: dict[str, AIModelInfo] = {}
 
         for entry in _MODEL_CATALOG:
@@ -115,7 +116,7 @@ class ModelRegistry:
         logger.debug(f"ModelRegistry: {len(self._models)} modelos registrados")
 
     def get_available_models(self) -> list[AIModelInfo]:
-        """Retorna todos los modelos del catálogo."""
+        """Retorna todos los modelos del catalogo."""
         return list(self._models.values())
 
     def get_models_by_type(self, model_type: AIModelType) -> list[AIModelInfo]:
@@ -125,15 +126,14 @@ class ModelRegistry:
     def get_model_info(self, model_id: str) -> AIModelInfo:
         """Retorna info de un modelo por su ID. Lanza KeyError si no existe."""
         if model_id not in self._models:
-            raise KeyError(f"Modelo no encontrado en catálogo: '{model_id}'")
+            raise KeyError(f"Modelo no encontrado en catalogo: '{model_id}'")
         return self._models[model_id]
 
     def is_downloaded(self, model_id: str) -> bool:
         """
-        Verifica si un modelo ya está descargado en cache. Idempotente.
+        Verifica si un modelo ya esta descargado. Idempotente.
 
-        YOLO: busca el .pt en el directorio actual o cache ultralytics.
-        HuggingFace: busca en ~/.cache/huggingface/hub/
+        Busca en models_cache/ dentro del proyecto (no en cache del sistema).
         """
         info = self.get_model_info(model_id)
 
@@ -236,42 +236,48 @@ class ModelRegistry:
         else:
             raise ValueError(f"Describer desconocido: '{model_id}'")
 
-    # ── Métodos privados: verificar descarga ──
+    # ── Privados: verificar descarga en models_cache/ del proyecto ──
 
     @staticmethod
     def _is_yolo_downloaded(repo_id: str) -> bool:
-        """Verifica si un modelo YOLO .pt existe."""
+        """Verifica si un modelo YOLO .pt existe en el proyecto."""
+        settings = get_settings()
+
+        # Buscar en models_cache/ultralytics/
+        local_cache = settings.models_cache_dir / "ultralytics"
+        if local_cache.exists():
+            for pt_file in local_cache.rglob(repo_id):
+                return True
+
+        # Buscar en directorio actual (fallback)
         if Path(repo_id).exists():
             return True
-        # Buscar en cache de ultralytics
-        home = Path.home()
-        ultralytics_cache = home / ".ultralytics" / "models" / repo_id
-        if ultralytics_cache.exists():
-            return True
-        # Buscar en directorio actual de trabajo
-        return Path(repo_id).exists()
+
+        return False
 
     @staticmethod
     def _is_hf_downloaded(repo_id: str) -> bool:
-        """Verifica si un modelo HuggingFace existe en cache."""
-        hf_cache = Path.home() / ".cache" / "huggingface" / "hub"
+        """Verifica si un modelo HuggingFace existe en cache del proyecto."""
+        settings = get_settings()
+        hf_cache = settings.models_cache_dir / "huggingface"
+
         # HuggingFace guarda como models--org--name
         folder_name = "models--" + repo_id.replace("/", "--")
         model_dir = hf_cache / folder_name
+
         if model_dir.exists():
-            # Verificar que tenga snapshots (descarga completa)
             snapshots = model_dir / "snapshots"
             if snapshots.exists() and any(snapshots.iterdir()):
                 return True
+
         return False
 
-    # ── Métodos privados: descargar ──
+    # ── Privados: descargar ──
 
     @staticmethod
     def _download_yolo(repo_id: str) -> None:
         """Descarga modelo YOLO via ultralytics (auto-download)."""
         from ultralytics import YOLO
-        # YOLO auto-descarga el .pt al instanciarlo
         _ = YOLO(repo_id)
 
     @staticmethod
@@ -280,7 +286,7 @@ class ModelRegistry:
         model_id: str,
         on_progress: Callable[[str, float], None] | None = None,
     ) -> None:
-        """Descarga modelo HuggingFace al cache local."""
+        """Descarga modelo HuggingFace al cache local del proyecto."""
         from huggingface_hub import snapshot_download
 
         snapshot_download(
