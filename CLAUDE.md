@@ -6,20 +6,35 @@ App de escritorio Windows para busqueda visual en videos de camaras de seguridad
 por lenguaje natural. Escribes "mujer con camisa amarilla" y te muestra los frames
 exactos con timestamps. 100% local en GPU NVIDIA, sin servidores externos.
 
-Soporta dos modos:
-- v1.0: Video grabado (.mp4) — indexar y luego buscar
-- v2.0: Camaras RTSP en vivo — procesa en tiempo real, busqueda instantanea
+Dos modos: v1.0 video grabado + v2.0 camaras RTSP en vivo.
 
-## Repo
+## Repo y estado
 
 - **GitHub:** github.com/ghmedinac123/video_search_desktop
-- **Estado:** v2.0 — 63 archivos Python
-- **Lenguaje:** Python 3.12 (100%)
+- **Estado:** v2.0 — 63+ archivos Python
+- **Python:** 3.12 (fijado en .python-version)
+- **Gestor paquetes:** uv (NO pip, NO conda, NO poetry)
+
+## Como correr
+
+```powershell
+git clone https://github.com/ghmedinac123/video_search_desktop.git
+cd video_search_desktop
+copy .env.example .env
+uv sync
+uv run python main.py
+```
+
+IMPORTANTE:
+- uv sync crea .venv/ automaticamente, descarga Python 3.12 si no existe
+- Siempre usar `uv run` para ejecutar — NO activar venv manualmente
+- Para agregar dependencias: `uv add nombre-paquete` (NO pip install)
+- Modelos AI se descargan en models_cache/ dentro del proyecto
 
 ## Stack
 
 - **GUI:** PySide6 (LGPL, comercial gratis) — dark/light mode
-- **Detector:** YOLOv11 n/m/x (seleccionable desde UI)
+- **Detector:** YOLO26 n/s/m (end-to-end, sin NMS, Ultralytics)
 - **Embeddings:** Jina CLIP v2 (multilingue, imagen y texto)
 - **VLM:** Qwen2.5-VL 7B Q4 (espanol) o Moondream2 4-bit (ingles)
 - **Database:** ChromaDB 1.5.7 embebido (PersistentClient, sin Docker)
@@ -34,17 +49,17 @@ Soporta dos modos:
 main.py                        <- Clase Application ensambla core + UI
 ├── core/                      <- Backend (NO importa nada de ui/)
 │   ├── logger.py              <- Loguru centralizado
-│   ├── gpu_utils.py           <- GPUUtils estatico: detect, vram, temp
-│   ├── model_registry.py      <- Catalogo 6 modelos + Factory Method
-│   ├── model_manager.py       <- Singleton thread-safe, modelos en GPU
-│   ├── database.py            <- ChromaDB embebido, Repository pattern
-│   ├── frame_extractor.py     <- Video -> frames con OpenCV
+│   ├── gpu_utils.py           <- GPUUtils estatico
+│   ├── model_registry.py      <- Catalogo 6 modelos + Factory (YOLO26)
+│   ├── model_manager.py       <- Singleton thread-safe
+│   ├── database.py            <- ChromaDB embebido, Repository
+│   ├── frame_extractor.py     <- Video -> frames
 │   ├── stream_capture.py      <- Camara RTSP -> frames (v2.0)
 │   ├── indexer.py             <- Pipeline + process_single_frame()
 │   ├── searcher.py            <- Texto -> CLIP embed -> ChromaDB query
 │   ├── detectors/
 │   │   ├── base_detector.py   <- ABC
-│   │   └── yolo_detector.py   <- Hereda BaseDetector
+│   │   └── yolo_detector.py   <- Hereda BaseDetector (funciona con YOLO26)
 │   ├── embedders/
 │   │   ├── base_embedder.py   <- ABC
 │   │   └── clip_embedder.py   <- Hereda BaseEmbedder
@@ -52,97 +67,48 @@ main.py                        <- Clase Application ensambla core + UI
 │       ├── base_describer.py  <- ABC
 │       ├── qwen_describer.py  <- Hereda BaseDescriber (espanol)
 │       └── moondream_describer.py <- Hereda BaseDescriber (ingles)
-├── models/                    <- Pydantic v2 (datos tipados entre capas)
-│   ├── settings.py            <- AppSettings lee .env + setup_model_environment()
-│   ├── camera.py              <- CameraConfig + CameraStatus + CameraStore (v2.0)
-│   ├── gpu.py                 <- GPUInfo, VRAMStatus
-│   ├── models_ai.py           <- AIModelInfo, ModelStatus, AIModelType
-│   ├── video.py               <- VideoMetadata
-│   ├── frame.py               <- FrameData
-│   ├── detection.py           <- BoundingBox, CropData
-│   ├── search.py              <- SearchQuery, SearchResult, SearchResponse
-│   ├── indexing.py            <- IndexStage, IndexProgress, IndexResult
-│   └── database.py            <- CollectionStats
+├── models/                    <- Pydantic v2
+│   ├── settings.py            <- AppSettings + setup_model_environment()
+│   ├── camera.py              <- CameraConfig + CameraStore (v2.0)
+│   └── ... (16 modelos tipados)
 └── ui/                        <- PySide6 frontend
-    ├── theme.py               <- Dark/light mode, QSS global, toggle
-    ├── base_widget.py         <- Clase base: TODOS los paneles heredan
-    ├── main_window.py         <- QMainWindow + sidebar + stacked panels
-    ├── widgets/
-    │   ├── sidebar.py         <- 5 botones: Modelos, Indexar, Buscar, Camaras, Stats
-    │   ├── gpu_monitor.py     <- VRAM tiempo real cada 1s
-    │   ├── model_panel.py     <- Seleccion modelos + VRAM estimada
-    │   ├── model_card.py      <- Card reutilizable por modelo (N instancias)
-    │   ├── video_selector.py  <- Drag-drop + metadata
-    │   ├── indexing_panel.py  <- Progreso 4 barras + pause/cancel
-    │   ├── progress_group.py  <- Barras reutilizables
-    │   ├── search_panel.py    <- Input + galeria + detalle
-    │   ├── result_gallery.py  <- Grid scrollable de ResultCards
-    │   ├── result_card.py     <- Card reutilizable por resultado (N instancias)
-    │   ├── result_detail.py   <- Frame + bbox + metadata + abrir video
-    │   ├── camera_panel.py    <- CRUD camaras + monitoreo en vivo (v2.0)
-    │   └── stats_panel.py     <- Estadisticas + limpiar coleccion
-    └── workers/
-        ├── base_worker.py     <- Clase base: TODOS los workers heredan
-        ├── model_download_worker.py
-        ├── model_load_worker.py
-        ├── index_worker.py
-        ├── search_worker.py
-        └── stream_worker.py   <- Captura RTSP background (v2.0)
+    ├── theme.py               <- Dark/light mode
+    ├── base_widget.py         <- Clase base TODOS los paneles heredan
+    ├── main_window.py         <- QMainWindow + sidebar + stack
+    ├── widgets/ (13)          <- Componentes visuales
+    └── workers/ (6)           <- QThread workers (heredan BaseWorker)
 ```
-
-## Principios de codigo
-
-- **SOLID estricto:** cada clase tiene UNA responsabilidad
-- **Polimorfismo:** BaseDetector/BaseEmbedder/BaseDescriber con herencia
-- **Singleton:** ModelManager thread-safe
-- **Factory:** ModelRegistry.create_detector/embedder/describer()
-- **Repository:** Database abstrae ChromaDB
-- **Observer:** Signals/Slots PySide6 para workers y UI
-- **Dependency Inversion:** Indexer recibe interfaces por constructor
-- **Template Method:** BaseWorker.run() -> subclase.execute()
-- **0 codigo duplicado:** BaseWidget y BaseWorker eliminan repeticion
-- **Tipado fuerte:** Pydantic v2 en TODAS las interfaces entre capas
-- **Idempotencia:** download no re-descarga, upsert no duplica
 
 ## Regla de dependencia
 
 ```
-ui/ -> core/ -> models/    (permitido, fluye hacia abajo)
+ui/ -> core/ -> models/    (permitido)
 core/ -> ui/               (PROHIBIDO)
 models/ -> core/           (PROHIBIDO)
 ```
 
-## Datos en runtime (gitignored)
+## Decisiones tecnicas
 
-- `models_cache/` — Modelos AI descargados (HF_HOME apunta aqui)
-- `data/chromadb/` — Base de datos embeddings
-- `data/cameras.json` — Configuracion camaras (creado desde UI)
-- `output/frames/` — Frames extraidos (por video y por camara)
-- `output/crops/` — Detecciones recortadas
-- `logs/` — Logs rotativos (10MB, 7 dias)
+- Python 3.12 fijado en .python-version
+- uv como unico gestor: uv sync + uv run (nunca pip install)
+- YOLO26 (end-to-end sin NMS) reemplaza YOLO11
+- Modelos en models_cache/ (HF_HOME apunta ahi via setup_model_environment)
+- Camaras configurables desde UI, persistidas en data/cameras.json
+- MAX_CAMERAS=4 en .env (limite GPU)
+- Defaults livianos: yolo26n + moondream2-4bit (6.2 GB VRAM)
+- Borrar carpeta = borrar TODO (portable)
 
-## Decisiones tecnicas clave
+## Pendiente
 
-- Modelos AI en models_cache/ dentro del proyecto (portable, borras carpeta = borras todo)
-- setup_model_environment() configura HF_HOME + YOLO_CONFIG_DIR al iniciar
-- ChromaDB embebido PersistentClient — sin Docker, sin WSL, Windows nativo
-- GPU dinamica — detecta cualquier NVIDIA, no hardcoded
-- Camaras configurables desde UI, persistidas en JSON (no en .env)
-- MAX_CAMERAS=4 en .env como limite tecnico de la GPU
-- StreamCapture: 1 instancia por camara, 1 hilo por camara
-- process_single_frame() en Indexer reutiliza pipeline completo
-- Defaults livianos: yolo11n + moondream2-4bit (6.3 GB VRAM total)
-
-## Pendiente (hacer en PC con RTX 5060 Ti)
-
-- Debug primer run: uv sync + python main.py
+- Debug primer run en PC con RTX 5060 Ti
 - Aplicar 5 modificaciones para conectar camaras al pipeline:
   1. core/indexer.py -> agregar process_single_frame()
   2. models/__init__.py -> agregar imports camera
-  3. ui/widgets/sidebar.py -> agregar 5to boton "Camaras"
+  3. ui/widgets/sidebar.py -> agregar 5to boton Camaras
   4. ui/main_window.py -> agregar 5to panel
   5. main.py -> conectar CameraPanel con StreamWorker
-- Test: descargar modelos, indexar video, buscar por texto
-- Test: agregar camara RTSP, conectar, ver detecciones en vivo
-- PyInstaller + Inno Setup para instalador .exe
-- Splash screen + iconos
+- Test end-to-end: video + camaras + busqueda
+- Futuro: reconocimiento facial (InsightFace/Buffalo)
+- Futuro: placas vehiculos (PaddleOCR)
+- Futuro: alertas Telegram
+- Futuro: PyInstaller + Inno Setup
