@@ -1,39 +1,39 @@
-# ── Runtime data ──
+﻿# Runtime data
 data/
 output/
 logs/
 
-# ── Models ──
-*.pt
+# Models cache (pesado, se descarga al primer uso)
 models_cache/
 
-# ── Python ──
+# Python
 __pycache__/
 *.pyc
 *.pyo
 .venv/
 *.egg-info/
 
-# ── uv ──
+# uv
 uv.lock
 
-# ── IDE ──
+# IDE
 .vscode/
 .idea/
 *.swp
 *.swo
 
-# ── Build ──
+# Build
 dist/
 build/
 *.spec
 
-# ── OS ──
+# OS
 .DS_Store
 Thumbs.db
 desktop.ini
 
-# ── Env (puede tener config local) ──
+# Env
 .env
 
-video_search_code.zip
+# PowerShell scripts de instalacion
+*.ps1

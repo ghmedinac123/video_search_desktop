@@ -1,13 +1,11 @@
-"""
-Configuración global de la aplicación.
+﻿"""
+Configuracion global de la aplicacion.
 
-Lee automáticamente desde .env usando pydantic-settings.
-Cada campo tiene un valor por defecto sensato — el .env es opcional.
+Lee automaticamente desde .env usando pydantic-settings.
 
 Uso:
     from models.settings import get_settings
     settings = get_settings()
-    print(settings.chromadb_dir)
 """
 
 from __future__ import annotations
@@ -19,7 +17,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class AppSettings(BaseSettings):
-    """Configuración centralizada — una sola fuente de verdad."""
+    """Configuracion centralizada — una sola fuente de verdad."""
 
     # ── Rutas ──
     data_dir: Path = Path("./data")
@@ -28,14 +26,15 @@ class AppSettings(BaseSettings):
     frames_dir: Path = Path("./output/frames")
     crops_dir: Path = Path("./output/crops")
     log_dir: Path = Path("./logs")
+    models_cache_dir: Path = Path("./models_cache")
 
     # ── ChromaDB ──
     collection_name: str = "video_search"
 
-    # ── Modelos por defecto ──
-    default_detector: str = "yolo11m"
+    # ── Modelos por defecto (livianos) ──
+    default_detector: str = "yolo11n"
     default_embedder: str = "jina-clip-v2"
-    default_describer: str = "qwen2.5-vl-7b-q4"
+    default_describer: str = "moondream2-4bit"
 
     # ── Procesamiento ──
     frame_interval: int = 2
@@ -45,9 +44,9 @@ class AppSettings(BaseSettings):
 
     # ── VLM Prompts ──
     qwen_prompt: str = (
-        "Describe esta imagen de cámara de seguridad en UNA oración detallada. "
-        "Incluye: tipo de persona u objeto, género, ropa (colores exactos y tipo), "
-        "accesorios, acción, dirección de movimiento. Solo la descripción, nada más."
+        "Describe esta imagen de camara de seguridad en UNA oracion detallada. "
+        "Incluye: tipo de persona u objeto, genero, ropa (colores exactos y tipo), "
+        "accesorios, accion, direccion de movimiento. Solo la descripcion, nada mas."
     )
     moondream_prompt: str = (
         "Describe this security camera image in ONE detailed sentence. "
@@ -76,8 +75,35 @@ class AppSettings(BaseSettings):
             self.frames_dir,
             self.crops_dir,
             self.log_dir,
+            self.models_cache_dir,
         ):
             directory.mkdir(parents=True, exist_ok=True)
+
+    def setup_model_environment(self) -> None:
+        """
+        Configura variables de entorno para que HuggingFace y Ultralytics
+        descarguen modelos DENTRO del proyecto, no en cache del sistema.
+
+        Llamar UNA VEZ al iniciar la app, ANTES de importar modelos.
+        """
+        import os
+        cache_path = str(self.models_cache_dir.resolve())
+
+        # HuggingFace descarga aqui (CLIP, Qwen, Moondream)
+        os.environ["HF_HOME"] = cache_path
+        os.environ["HUGGINGFACE_HUB_CACHE"] = str(
+            Path(cache_path) / "huggingface"
+        )
+
+        # Ultralytics descarga YOLO aqui
+        os.environ["YOLO_CONFIG_DIR"] = str(
+            Path(cache_path) / "ultralytics"
+        )
+
+        # Sentence-transformers usa el mismo cache de HF
+        os.environ["SENTENCE_TRANSFORMERS_HOME"] = str(
+            Path(cache_path) / "sentence_transformers"
+        )
 
 
 @lru_cache(maxsize=1)

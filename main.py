@@ -1,8 +1,8 @@
 ﻿"""
 Video Search Desktop — Punto de entrada principal.
 
-Inicializa logger, settings, y arranca la interfaz PySide6
-con todos los paneles conectados al core backend.
+Inicializa logger, settings, configura rutas de modelos,
+y arranca la interfaz PySide6 con todos los paneles conectados.
 
 Uso:
     python main.py
@@ -12,15 +12,20 @@ from __future__ import annotations
 
 import sys
 
+from models.settings import get_settings
+
+# CRITICO: Configurar rutas de modelos ANTES de importar cualquier modelo AI
+settings = get_settings()
+settings.ensure_directories()
+settings.setup_model_environment()
+
 from PySide6.QtWidgets import QApplication
-from PySide6.QtCore import Qt
 
 from core.logger import logger, setup_logger
 from core.database import Database
 from core.model_manager import ModelManager
 from core.indexer import Indexer
 from core.searcher import Searcher
-from models.settings import get_settings
 from ui.theme import Theme
 from ui.main_window import MainWindow
 from ui.widgets.model_panel import ModelPanel
@@ -40,22 +45,22 @@ class Application:
     """
 
     def __init__(self) -> None:
-        self._settings = get_settings()
-        self._settings.ensure_directories()
-
         setup_logger(
-            level=self._settings.log_level,
-            log_dir=self._settings.log_dir,
+            level=settings.log_level,
+            log_dir=settings.log_dir,
         )
 
         logger.info("=" * 50)
         logger.info("VIDEO SEARCH DESKTOP — Iniciando")
         logger.info("=" * 50)
+        logger.info(f"Python: {sys.version}")
+        logger.info(f"Models cache: {settings.models_cache_dir.resolve()}")
+        logger.info(f"ChromaDB: {settings.chromadb_dir.resolve()}")
 
         # Core backend
         self._mm = ModelManager.get_instance()
         self._db = Database()
-        self._indexer = Indexer(self._mm, self._db, self._settings)
+        self._indexer = Indexer(self._mm, self._db, settings)
         self._searcher = Searcher(self._mm, self._db)
 
         # Qt Application
