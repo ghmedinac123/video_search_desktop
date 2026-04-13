@@ -1,0 +1,37 @@
+# ── Runtime data ──
+data/
+output/
+logs/
+
+# ── Models ──
+*.pt
+models_cache/
+
+# ── Python ──
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+*.egg-info/
+
+# ── uv ──
+uv.lock
+
+# ── IDE ──
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# ── Build ──
+dist/
+build/
+*.spec
+
+# ── OS ──
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ── Env (puede tener config local) ──
+.env
