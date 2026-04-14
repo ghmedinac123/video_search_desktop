@@ -75,6 +75,7 @@ class YOLODetector(BaseDetector):
             raise RuntimeError("YOLODetector no está cargado. Llama .load() primero.")
 
         settings = get_settings()
+        # Solo detectar personas (clase 0) por defecto
         results = self._model(frame, conf=confidence, verbose=False)
         crops: list[CropData] = []
         h, w = frame.shape[:2]
@@ -83,6 +84,10 @@ class YOLODetector(BaseDetector):
             x1, y1, x2, y2 = map(int, box.xyxy[0].tolist())
             conf = float(box.conf[0])
             class_name = results[0].names[int(box.cls[0])]
+
+            # Filtrar: solo personas
+            if int(box.cls[0]) != 0:
+                continue
 
             # Aplicar padding al crop
             pad = settings.crop_padding
