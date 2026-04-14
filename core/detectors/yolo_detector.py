@@ -83,10 +83,19 @@ class YOLODetector(BaseDetector):
         for det_idx, box in enumerate(results[0].boxes):
             x1, y1, x2, y2 = map(int, box.xyxy[0].tolist())
             conf = float(box.conf[0])
-            class_name = results[0].names[int(box.cls[0])]
+            cls_id = int(box.cls[0])
+            class_name = results[0].names[cls_id]
 
-            # Filtrar: solo personas
-            if int(box.cls[0]) != 0:
+            # Clases utiles para seguridad (skip muebles/objetos estaticos)
+            SECURITY_CLASSES = {
+                0: "person",
+                1: "bicycle", 2: "car", 3: "motorcycle",
+                5: "bus", 7: "truck",
+                14: "bird", 15: "cat", 16: "dog",
+                24: "backpack", 25: "umbrella",
+                26: "handbag", 27: "tie", 28: "suitcase",
+            }
+            if cls_id not in SECURITY_CLASSES:
                 continue
 
             # Aplicar padding al crop
