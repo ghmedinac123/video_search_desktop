@@ -44,13 +44,23 @@ class MoondreamDescriber(BaseDescriber):
 
     def load(self, device: str = "cuda") -> None:
         """Carga Moondream2 4-bit en GPU."""
+        # Parche compatibilidad: torchao 0.15+ renombro int4_weight_only
+        try:
+            import torchao.quantization as _tq
+            if not hasattr(_tq, 'int4_weight_only'):
+                from torchao.quantization import Int4WeightOnlyConfig
+                def _int4_compat(group_size=128, **kwargs):
+                    return Int4WeightOnlyConfig(group_size=group_size)
+                _tq.int4_weight_only = _int4_compat
+        except ImportError:
+            pass
+
         from transformers import AutoModelForCausalLM
 
         self._device = device
 
         self._model = AutoModelForCausalLM.from_pretrained(
             self._model_name,
-            revision=self.MOONDREAM_REVISION,
             trust_remote_code=True,
             device_map={"": self._device},
         )

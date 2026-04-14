@@ -37,7 +37,7 @@ class GPUUtils:
                 return GPUInfo(available=False)
 
             device_name = torch.cuda.get_device_name(0)
-            total_vram = torch.cuda.get_device_properties(0).total_memory / 1e9
+            total_vram = torch.cuda.get_device_properties(0).total_memory / (1024**3)
             cuda_version = torch.version.cuda or "N/A"
 
             # Intentar obtener versi??n del driver con pynvml
@@ -79,9 +79,9 @@ class GPUUtils:
             if not torch.cuda.is_available():
                 return VRAMStatus()
 
-            used = torch.cuda.memory_allocated(0) / 1e9
-            reserved = torch.cuda.memory_reserved(0) / 1e9
-            total = torch.cuda.get_device_properties(0).total_memory / 1e9
+            used = torch.cuda.memory_allocated(0) / (1024**3)
+            reserved = torch.cuda.memory_reserved(0) / (1024**3)
+            total = torch.cuda.get_device_properties(0).total_memory / (1024**3)
             free = total - reserved
 
             # Temperatura y utilizaci??n via pynvml
@@ -108,9 +108,9 @@ class GPUUtils:
             import torch
 
             if torch.cuda.is_available():
-                before = torch.cuda.memory_allocated(0) / 1e9
+                before = torch.cuda.memory_allocated(0) / (1024**3)
                 torch.cuda.empty_cache()
-                after = torch.cuda.memory_allocated(0) / 1e9
+                after = torch.cuda.memory_allocated(0) / (1024**3)
                 freed = before - after
                 logger.info(f"VRAM cache liberado: {freed:.2f} GB")
         except Exception as e:

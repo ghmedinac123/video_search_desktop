@@ -17,7 +17,7 @@ dependencies = [
     "torch>=2.5",
     "torchvision>=0.20",
     "sentence-transformers>=3.3",
-    "transformers>=4.46",
+    "transformers>=4.46,<5.0",
     "bitsandbytes>=0.44",
     "accelerate>=1.2",
     "qwen-vl-utils>=0.0.8",
@@ -27,6 +27,9 @@ dependencies = [
     "loguru>=0.7",
     "nvidia-ml-py>=12.560",
     "python-dotenv>=1.0",
+    "einops>=0.8.2",
+    "timm>=1.0.26",
+    "torchao>=0.17.0",
 ]
 
 [project.scripts]
