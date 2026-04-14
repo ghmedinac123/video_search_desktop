@@ -207,7 +207,11 @@ class ModelRegistry:
         if info.model_type != AIModelType.DETECTOR:
             raise TypeError(f"'{model_id}' no es un detector")
 
-        return YOLODetector(model_path=info.repo_id)
+        settings = get_settings()
+        model_path = settings.models_cache_dir / "ultralytics" / info.repo_id
+        if not model_path.exists():
+            model_path = Path(info.repo_id)
+        return YOLODetector(model_path=str(model_path))
 
     def create_embedder(self, model_id: str) -> "BaseEmbedder":
         """Factory: crea instancia correcta de embedder."""
@@ -276,9 +280,19 @@ class ModelRegistry:
 
     @staticmethod
     def _download_yolo(repo_id: str) -> None:
-        """Descarga modelo YOLO via ultralytics (auto-download)."""
+        """Descarga modelo YOLO a models_cache/ultralytics/."""
+        import shutil
         from ultralytics import YOLO
-        _ = YOLO(repo_id)
+        settings = get_settings()
+        cache_dir = settings.models_cache_dir / "ultralytics"
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        target = cache_dir / repo_id
+        if not target.exists():
+            _ = YOLO(repo_id)  # descarga al directorio actual
+            if Path(repo_id).exists():
+                shutil.move(str(Path(repo_id)), str(target))
+        else:
+            _ = YOLO(str(target))
 
     @staticmethod
     def _download_hf(
