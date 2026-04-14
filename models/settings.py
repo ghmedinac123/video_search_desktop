@@ -105,6 +105,11 @@ class AppSettings(BaseSettings):
             Path(cache_path) / "sentence_transformers"
         )
 
+        # HuggingFace token para descargas mas rapidas
+        hf_token = os.getenv("HF_TOKEN", "")
+        if hf_token:
+            os.environ["HF_TOKEN"] = hf_token
+
 
 @lru_cache(maxsize=1)
 def get_settings() -> AppSettings:
