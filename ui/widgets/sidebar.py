@@ -1,8 +1,8 @@
-﻿"""
-Barra de navegación lateral.
+"""
+Barra de navegaci?n lateral.
 
-Responsabilidad ÚNICA: mostrar botones de navegación y emitir
-una señal cuando el usuario cambia de sección.
+Responsabilidad ?NICA: mostrar botones de navegaci?n y emitir
+una se?al cuando el usuario cambia de secci?n.
 
 Uso:
     from ui.widgets.sidebar import Sidebar
@@ -27,10 +27,10 @@ from ui.theme import Theme
 
 class _NavButton(QPushButton):
     """
-    Botón individual de la sidebar. Componente interno reutilizable.
+    Bot?n individual de la sidebar. Componente interno reutilizable.
 
-    Cada botón tiene un ícono (emoji), texto, y estado activo/inactivo.
-    Se instancia N veces (1 por sección).
+    Cada bot?n tiene un ?cono (emoji), texto, y estado activo/inactivo.
+    Se instancia N veces (1 por secci?n).
     """
 
     def __init__(self, icon: str, text: str, parent: QWidget | None = None) -> None:
@@ -43,17 +43,17 @@ class _NavButton(QPushButton):
 
     @property
     def active(self) -> bool:
-        """True si este botón es el seleccionado."""
+        """True si este bot?n es el seleccionado."""
         return self._active
 
     @active.setter
     def active(self, value: bool) -> None:
-        """Activa o desactiva el botón visualmente."""
+        """Activa o desactiva el bot?n visualmente."""
         self._active = value
         self._apply_style()
 
     def _apply_style(self) -> None:
-        """Aplica estilo según estado activo/inactivo."""
+        """Aplica estilo seg?n estado activo/inactivo."""
         c = Theme.colors()
         if self._active:
             self.setStyleSheet(
@@ -90,20 +90,20 @@ class _NavButton(QPushButton):
 
 class Sidebar(QWidget):
     """
-    Sidebar de navegación con botones verticales.
+    Sidebar de navegaci?n con botones verticales.
 
-    Emite page_changed(int) cuando el usuario hace click en un botón.
-    El índice corresponde a la posición en el QStackedWidget.
+    Emite page_changed(int) cuando el usuario hace click en un bot?n.
+    El ?ndice corresponde a la posici?n en el QStackedWidget.
     """
 
     page_changed = Signal(int)
 
-    # Definición de secciones: (ícono, texto)
+    # Definici?n de secciones: (?cono, texto)
     SECTIONS: list[tuple[str, str]] = [
         ("\U0001f9e0", "Modelos"),
         ("\U0001f4e5", "Indexar"),
         ("\U0001f50d", "Buscar"),
-        ("\U0001f4ca", "Estadísticas"),
+        ("\U0001f4ca", "Estad?sticas"),
     ]
 
     def __init__(self, parent: QWidget | None = None) -> None:
@@ -127,7 +127,7 @@ class Sidebar(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(2)
 
-        # Logo / Título
+        # Logo / T?tulo
         title = QLabel("Video Search")
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         title.setStyleSheet(
@@ -139,7 +139,7 @@ class Sidebar(QWidget):
         )
         layout.addWidget(title)
 
-        # Botones de navegación
+        # Botones de navegaci?n
         for i, (icon, text) in enumerate(self.SECTIONS):
             btn = _NavButton(icon, text)
             btn.clicked.connect(lambda checked=False, idx=i: self._on_click(idx))
@@ -167,14 +167,14 @@ class Sidebar(QWidget):
         layout.addWidget(self._theme_btn)
 
     def _on_click(self, index: int) -> None:
-        """Maneja click en un botón de navegación."""
+        """Maneja click en un bot?n de navegaci?n."""
         if index == self._current_index:
             return
         self._set_active(index)
         self.page_changed.emit(index)
 
     def _set_active(self, index: int) -> None:
-        """Activa un botón y desactiva los demás."""
+        """Activa un bot?n y desactiva los dem?s."""
         self._current_index = index
         for i, btn in enumerate(self._buttons):
             btn.active = (i == index)
@@ -185,10 +185,9 @@ class Sidebar(QWidget):
         # La ventana principal debe reaplicar el stylesheet
         window = self.window()
         if window:
-            from ui.theme import Theme
             window.setStyleSheet(Theme.get_stylesheet())
 
-        # Actualizar texto del botón
+        # Actualizar texto del bot?n
         if new_mode == "dark":
             self._theme_btn.setText("  \u2600   Modo claro")
         else:
@@ -198,7 +197,7 @@ class Sidebar(QWidget):
         self._setup_ui_colors()
 
     def _setup_ui_colors(self) -> None:
-        """Reaplica colores después de cambio de tema."""
+        """Reaplica colores despu?s de cambio de tema."""
         c = Theme.colors()
         self.setStyleSheet(
             f"background-color: {c.bg_secondary};"

@@ -37,3 +37,6 @@ desktop.ini
 
 # PowerShell scripts de instalacion
 *.ps1
+
+Ultralytics/
+*.pt

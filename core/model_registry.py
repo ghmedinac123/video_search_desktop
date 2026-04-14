@@ -291,7 +291,7 @@ class ModelRegistry:
 
         snapshot_download(
             repo_id=repo_id,
-            resume_download=True,
+            ignore_patterns=["*.onnx", "*.onnx_data", "*.msgpack", "*.h5", "*.bin", "onnx/*", "flax_model*"],
         )
         if on_progress:
             on_progress(model_id, 1.0)

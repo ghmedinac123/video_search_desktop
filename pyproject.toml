@@ -1,7 +1,7 @@
 [project]
 name = "video-search-desktop"
-version = "1.0.0"
-description = "Búsqueda visual en videos de seguridad por lenguaje natural — 100% local"
+version = "2.0.0"
+description = "Busqueda visual en videos de seguridad por lenguaje natural"
 requires-python = ">=3.12"
 license = { text = "Proprietary" }
 authors = [
@@ -9,16 +9,11 @@ authors = [
 ]
 
 dependencies = [
-    # ── GUI ──
     "PySide6>=6.8",
-
-    # ── Computer Vision ──
     "opencv-python-headless>=4.10",
     "ultralytics>=8.3",
     "Pillow>=11.0",
     "numpy>=1.26",
-
-    # ── AI / ML ──
     "torch>=2.5",
     "torchvision>=0.20",
     "sentence-transformers>=3.3",
@@ -26,21 +21,11 @@ dependencies = [
     "bitsandbytes>=0.44",
     "accelerate>=1.2",
     "qwen-vl-utils>=0.0.8",
-
-    # ── Database ──
     "chromadb>=1.5.7",
-
-    # ── Data Validation ──
     "pydantic>=2.9",
     "pydantic-settings>=2.6",
-
-    # ── Logging ──
     "loguru>=0.7",
-
-    # ── GPU Monitoring ──
     "nvidia-ml-py>=12.560",
-
-    # ── Config ──
     "python-dotenv>=1.0",
 ]
 
@@ -53,3 +38,12 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["core", "models", "ui"]
+
+[tool.uv.sources]
+torch = { index = "pytorch-cu128" }
+torchvision = { index = "pytorch-cu128" }
+
+[[tool.uv.index]]
+name = "pytorch-cu128"
+url = "https://download.pytorch.org/whl/cu128"
+explicit = true

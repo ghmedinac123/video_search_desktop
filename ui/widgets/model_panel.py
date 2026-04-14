@@ -1,4 +1,4 @@
-﻿"""
+"""
 Panel de seleccion y gestion de modelos AI.
 
 Responsabilidad UNICA: permitir al usuario seleccionar, descargar
@@ -165,9 +165,9 @@ class ModelPanel(BaseWidget):
         fits = total_vram <= gpu_total if gpu_total > 0 else True
         status = "OK" if fits else "EXCEDE VRAM"
 
-        self._vram_estimate_label.setText(
+        if hasattr(self, '_vram_estimate_label'): self._vram_estimate_label.setText(
             f"VRAM estimada: {total_vram:.1f} GB "
-            f"({' + '.join(parts)}) — {status}"
+            f"({' + '.join(parts)}) ? {status}"
         )
 
     @property

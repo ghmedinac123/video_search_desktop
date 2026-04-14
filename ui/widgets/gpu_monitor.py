@@ -1,4 +1,4 @@
-﻿"""
+"""
 Widget de monitoreo GPU en tiempo real.
 
 Responsabilidad UNICA: mostrar VRAM usada/total, temperatura,
@@ -126,12 +126,8 @@ class GPUMonitorWidget(BaseWidget):
     def _create_metric(self, label: str, value: str) -> QWidget:
         """Crea un widget metrica reutilizable: label arriba, valor abajo."""
         c = Theme.colors()
-        container = QWidget()
-        layout = QHBoxLayout(container) if self._compact else __import__(
-            "PySide6.QtWidgets", fromlist=["QVBoxLayout"]
-        ).QVBoxLayout(container)
-
         from PySide6.QtWidgets import QVBoxLayout
+        container = QWidget()
         layout = QVBoxLayout(container)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(2)

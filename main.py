@@ -33,6 +33,8 @@ from ui.widgets.indexing_panel import IndexingPanel
 from ui.widgets.search_panel import SearchPanel
 from ui.widgets.stats_panel import StatsPanel
 from ui.workers.index_worker import IndexWorker
+from ui.workers.model_download_worker import ModelDownloadWorker
+from ui.workers.model_load_worker import ModelLoadWorker
 from ui.workers.search_worker import SearchWorker
 
 
@@ -76,6 +78,7 @@ class Application:
 
         # Panel 0: Modelos
         self._model_panel = ModelPanel()
+        self._connect_models()
         self._window.set_panel(0, self._model_panel)
 
         # Panel 1: Indexacion
@@ -92,6 +95,100 @@ class Application:
         self._stats_panel = StatsPanel()
         self._stats_panel.set_database(self._db)
         self._window.set_panel(3, self._stats_panel)
+
+    def _connect_models(self) -> None:
+        """Conecta botones Descargar/Cargar del panel Modelos con workers."""
+        panel = self._model_panel
+
+        def download_selected():
+            """Descarga los modelos seleccionados."""
+            selected = []
+            if panel.selected_detector:
+                selected.append(panel.selected_detector)
+            if panel.selected_embedder:
+                selected.append(panel.selected_embedder)
+            if panel.selected_describer:
+                selected.append(panel.selected_describer)
+
+            if not selected:
+                panel.show_error("Error", "No hay modelos seleccionados")
+                return
+
+            panel._download_btn.setEnabled(False)
+            panel._download_btn.setText("Descargando...")
+
+            self._dl_worker = ModelDownloadWorker(
+                registry=self._mm.registry,
+                model_ids=selected,
+            )
+            self._dl_worker.progress.connect(
+                lambda mid, p: logger.info(f"Descargando {mid}: {p*100:.0f}%")
+            )
+            self._dl_worker.finished.connect(
+                lambda: self._on_download_finished()
+            )
+            self._dl_worker.error.connect(
+                lambda msg: self._on_download_error(msg)
+            )
+            self._dl_worker.start()
+
+        def load_selected():
+            """Carga los modelos seleccionados en GPU."""
+            panel._load_btn.setEnabled(False)
+            panel._load_btn.setText("Cargando en GPU...")
+
+            self._load_worker = ModelLoadWorker(
+                manager=self._mm,
+                detector_id=panel.selected_detector,
+                embedder_id=panel.selected_embedder,
+                describer_id=panel.selected_describer,
+            )
+            self._load_worker.model_loaded.connect(
+                lambda mid: logger.info(f"Modelo cargado en GPU: {mid}")
+            )
+            self._load_worker.all_loaded.connect(
+                lambda: self._on_load_finished()
+            )
+            self._load_worker.error.connect(
+                lambda msg: self._on_load_error(msg)
+            )
+            self._load_worker.start()
+
+        panel._download_btn.clicked.connect(download_selected)
+        panel._load_btn.clicked.connect(load_selected)
+
+    def _on_download_finished(self) -> None:
+        """Callback cuando terminan las descargas."""
+        self._model_panel._download_btn.setEnabled(True)
+        self._model_panel._download_btn.setText("Descargar seleccionados")
+        self._mm.registry.scan_downloaded_status()
+        self._model_panel.show_success(
+            "Descarga completa",
+            "Modelos descargados. Ahora haz click en Cargar en GPU.",
+        )
+        logger.info("Todos los modelos descargados")
+
+    def _on_download_error(self, message: str) -> None:
+        """Callback cuando falla una descarga."""
+        self._model_panel._download_btn.setEnabled(True)
+        self._model_panel._download_btn.setText("Descargar seleccionados")
+        self._model_panel.show_error("Error de descarga", message)
+
+    def _on_load_finished(self) -> None:
+        """Callback cuando todos los modelos estan en GPU."""
+        self._model_panel._load_btn.setEnabled(True)
+        self._model_panel._load_btn.setText("Cargar en GPU")
+        self._model_panel.show_success(
+            "Modelos cargados",
+            "Todos los modelos estan en GPU. Puedes indexar y buscar.",
+        )
+        logger.info("Todos los modelos cargados en GPU")
+
+    def _on_load_error(self, message: str) -> None:
+        """Callback cuando falla la carga en GPU."""
+        self._model_panel._load_btn.setEnabled(True)
+        self._model_panel._load_btn.setText("Cargar en GPU")
+        self._model_panel.show_error("Error cargando en GPU", message)
 
     def _connect_indexing(self) -> None:
         """Conecta botones del panel indexacion con el IndexWorker."""
