@@ -263,7 +263,7 @@ class Indexer:
         frame_data: FrameData,
         frame_image: np.ndarray,
         camera_id: str,
-    ) -> int:
+    ) -> list[CropData]:
         """
         Procesa UN frame con el pipeline completo: detect + embed + describe + store.
 
@@ -276,11 +276,12 @@ class Indexer:
             camera_id: ID de la fuente — para una camara, su camera_id.
 
         Returns:
-            Cantidad de detecciones almacenadas. 0 si no hay detecciones
-            relevantes (frames sin objetos se descartan automaticamente).
+            Lista de CropData almacenados (con bbox, class_name, confidence,
+            description). Vacia si no hay detecciones. El UI puede usarlas
+            para dibujar las cajas YOLO en el preview en vivo.
         """
         if not self._mm.is_ready():
-            return 0
+            return []
 
         with self._gpu_lock:
             # ── Detectar ──
@@ -290,13 +291,13 @@ class Indexer:
             )
 
             if not raw_crops:
-                return 0
+                return []
 
             # Preparar directorio de crops por camara
             crops_dir = self._settings.crops_dir / camera_id
             crops_dir.mkdir(parents=True, exist_ok=True)
 
-            stored = 0
+            stored_crops: list[CropData] = []
             h, w = frame_image.shape[:2]
             pad = self._settings.crop_padding
 
@@ -358,9 +359,9 @@ class Indexer:
                     },
                     description=description,
                 )
-                stored += 1
+                stored_crops.append(crop_data)
 
-            return stored
+            return stored_crops
 
     # ── Control de flujo ──
 
