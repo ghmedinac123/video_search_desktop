@@ -34,7 +34,10 @@ from PySide6.QtGui import QImage, QPixmap
 
 from ui.base_widget import BaseWidget
 from ui.theme import Theme
+from ui.widgets.alert_badge import AlertBadge
 from models.camera import CameraConfig, CameraStatus, CameraStore
+from models.event import EventSeverity, EventType, SecurityEvent
+from core.events import EventBus
 from core.logger import logger
 
 
@@ -60,6 +63,8 @@ class _CameraCard(BaseWidget):
         self._status = CameraStatus(camera_id=camera.camera_id)
         self._connected = False
         self._setup_ui()
+        # Suscribirse a eventos de esta camara para mostrar alertas
+        EventBus.get_instance().subscribe(self._on_event)
 
     def _setup_ui(self) -> None:
         """Construye la card."""
@@ -79,6 +84,11 @@ class _CameraCard(BaseWidget):
 
         self._status_badge = self.create_badge("Desconectada", "error")
         row1.addWidget(self._status_badge)
+
+        # Badge parpadeante para alertas (deteccion, tamper)
+        self._alert_badge = AlertBadge()
+        row1.addWidget(self._alert_badge)
+
         row1.addStretch()
         card_layout.addLayout(row1)
 
@@ -163,6 +173,38 @@ class _CameraCard(BaseWidget):
             self._toggle_btn.setText("Conectar")
             self._preview_label.clear()
             self._preview_label.setText("Sin señal — conecta para ver el video")
+
+    def _on_event(self, event: SecurityEvent) -> None:
+        """Reacciona a eventos de la EventBus filtrando por camara."""
+        if event.camera_id != self._camera.camera_id:
+            return
+
+        if event.event_type == EventType.DETECTION:
+            classes = event.payload.get("classes", [])
+            if "person" in classes:
+                self._alert_badge.flash(
+                    "PERSONA DETECTADA",
+                    color="#ff4d4f",
+                    duration_ms=4000,
+                )
+            else:
+                self._alert_badge.flash(
+                    f"{', '.join(classes).upper()}",
+                    color="#faad14",
+                    duration_ms=2500,
+                )
+        elif event.event_type == EventType.TAMPER:
+            self._alert_badge.flash(
+                "TAMPER",
+                color="#cf1322",
+                duration_ms=8000,
+            )
+        elif event.event_type == EventType.CAMERA_DISCONNECTED:
+            self._alert_badge.flash(
+                "DESCONECTADA",
+                color="#cf1322",
+                duration_ms=5000,
+            )
 
     def update_preview(self, frame_bgr: np.ndarray) -> None:
         """Actualiza el visor con el frame en vivo (BGR de OpenCV)."""

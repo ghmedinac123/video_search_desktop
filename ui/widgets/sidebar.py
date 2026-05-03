@@ -104,6 +104,7 @@ class Sidebar(QWidget):
         ("\U0001f4e5", "Indexar"),
         ("\U0001f50d", "Buscar"),
         ("\U0001f4f9", "Cámaras"),
+        ("\U0001f6a8", "Eventos"),
         ("\U0001f4ca", "Estadísticas"),
     ]
 

@@ -29,10 +29,17 @@ import cv2
 import numpy as np
 
 from core.database import Database
+from core.events import EventBus
 from core.frame_extractor import FrameExtractor
 from core.logger import logger
 from core.model_manager import ModelManager
+from core.tamper import (
+    BlackScreenDetector,
+    SceneChangeDetector,
+    TamperManager,
+)
 from models.detection import BoundingBox, CropData
+from models.event import EventSeverity, EventType, SecurityEvent
 from models.frame import FrameData
 from models.indexing import IndexProgress, IndexResult, IndexStage
 from models.settings import AppSettings, get_settings
@@ -67,6 +74,12 @@ class Indexer:
 
         # Lock para serializar acceso a la GPU desde multiples streams RTSP
         self._gpu_lock = threading.Lock()
+
+        # Bus de eventos para publicar detecciones (Observer pattern)
+        self._event_bus = EventBus.get_instance()
+
+        # TamperManager por camara (lazy: se crea en el primer frame)
+        self._tamper_managers: dict[str, TamperManager] = {}
 
     def index_video(
         self,
@@ -283,6 +296,9 @@ class Indexer:
         if not self._mm.is_ready():
             return []
 
+        # Anti-tamper PRIMERO (no requiere GPU)
+        self._analyze_tamper(camera_id, frame_image)
+
         with self._gpu_lock:
             # ── Detectar ──
             raw_crops = self._mm.detector.detect(
@@ -361,7 +377,54 @@ class Indexer:
                 )
                 stored_crops.append(crop_data)
 
+            # Publicar evento de deteccion al bus (UI/Telegram/HistorialPanel)
+            if stored_crops:
+                self._publish_detection_event(camera_id, stored_crops)
+
             return stored_crops
+
+    def _analyze_tamper(
+        self, camera_id: str, frame_image: np.ndarray
+    ) -> None:
+        """Ejecuta detectores anti-tamper para esta camara."""
+        manager = self._tamper_managers.get(camera_id)
+        if manager is None:
+            manager = TamperManager(camera_id=camera_id)
+            manager.add_detector(BlackScreenDetector())
+            manager.add_detector(SceneChangeDetector())
+            self._tamper_managers[camera_id] = manager
+        manager.analyze(frame_image)
+
+    def _publish_detection_event(
+        self, camera_id: str, crops: list[CropData]
+    ) -> None:
+        """Publica un SecurityEvent.DETECTION al EventBus."""
+        classes = sorted({c.class_name for c in crops})
+        has_person = "person" in classes
+
+        # Persona = warning, vehiculo/animal = info
+        severity = (
+            EventSeverity.WARNING if has_person else EventSeverity.INFO
+        )
+
+        title = f"{len(crops)} deteccion(es): {', '.join(classes)}"
+        first_desc = crops[0].description if crops[0].description else ""
+
+        event = SecurityEvent(
+            event_type=EventType.DETECTION,
+            severity=severity,
+            camera_id=camera_id,
+            title=title,
+            message=first_desc,
+            thumbnail_path=crops[0].crop_path,
+            payload={
+                "crop_ids": [c.crop_id for c in crops],
+                "classes": classes,
+                "count": len(crops),
+                "max_confidence": max(c.confidence for c in crops),
+            },
+        )
+        self._event_bus.publish(event)
 
     # ── Control de flujo ──
 

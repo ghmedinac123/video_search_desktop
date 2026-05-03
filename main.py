@@ -22,7 +22,9 @@ settings.setup_model_environment()
 from PySide6.QtWidgets import QApplication
 
 from core.logger import logger, setup_logger
+from core.alerts import AlertManager, TelegramNotifier
 from core.database import Database
+from core.events import EventBus
 from core.model_manager import ModelManager
 from core.indexer import Indexer
 from core.searcher import Searcher
@@ -34,6 +36,7 @@ from ui.widgets.indexing_panel import IndexingPanel
 from ui.widgets.search_panel import SearchPanel
 from ui.widgets.stats_panel import StatsPanel
 from ui.widgets.camera_panel import CameraPanel
+from ui.widgets.event_history_panel import EventHistoryPanel
 from ui.workers.index_worker import IndexWorker
 from ui.workers.model_download_worker import ModelDownloadWorker
 from ui.workers.model_load_worker import ModelLoadWorker
@@ -68,6 +71,11 @@ class Application:
         self._indexer = Indexer(self._mm, self._db, settings)
         self._searcher = Searcher(self._mm, self._db)
 
+        # Bus de eventos + notificadores (Observer pattern)
+        self._event_bus = EventBus.get_instance()
+        self._alert_manager = AlertManager.get_instance()
+        self._setup_notifiers()
+
         # Qt Application
         self._app = QApplication(sys.argv)
         self._app.setStyleSheet(Theme.get_stylesheet())
@@ -93,8 +101,8 @@ class Application:
         self._connect_indexing()
         self._window.set_panel(1, self._indexing_panel)
 
-        # Panel 2: Busqueda
-        self._search_panel = SearchPanel()
+        # Panel 2: Busqueda (con filtros, requiere DB)
+        self._search_panel = SearchPanel(database=self._db)
         self._connect_search()
         self._window.set_panel(2, self._search_panel)
 
@@ -103,10 +111,20 @@ class Application:
         self._connect_cameras()
         self._window.set_panel(3, self._camera_panel)
 
-        # Panel 4: Estadisticas
+        # Panel 4: Historial de eventos (suscripto a EventBus)
+        self._event_panel = EventHistoryPanel()
+        self._window.set_panel(4, self._event_panel)
+
+        # Panel 5: Estadisticas
         self._stats_panel = StatsPanel()
         self._stats_panel.set_database(self._db)
-        self._window.set_panel(4, self._stats_panel)
+        self._window.set_panel(5, self._stats_panel)
+
+    def _setup_notifiers(self) -> None:
+        """Registra notificadores en el AlertManager."""
+        telegram = TelegramNotifier()
+        self._alert_manager.register(telegram)
+        # Aqui se agregan futuros notifiers: email, push, webhook, etc.
 
     def _connect_models(self) -> None:
         """Conecta botones Descargar/Cargar del panel Modelos con workers."""
@@ -358,12 +376,12 @@ class Application:
         logger.info(f"Stream finalizado: {camera_id}")
 
     def _connect_search(self) -> None:
-        """Conecta barra de busqueda con el SearchWorker."""
+        """Conecta barra de busqueda + filtros con el SearchWorker."""
         panel = self._search_panel
 
         def do_search():
-            query = panel.query_text
-            if not query:
+            text = panel.query_text
+            if not text:
                 return
 
             if not self._mm.embedder or not self._mm.embedder.is_loaded():
@@ -373,10 +391,12 @@ class Application:
                 )
                 return
 
+            # Construir SearchQuery con texto + filtros activos
+            query = panel.build_query(n_results=30)
+
             self._search_worker = SearchWorker(
                 searcher=self._searcher,
-                query_text=query,
-                n_results=30,
+                query=query,
             )
             self._search_worker.results.connect(panel.set_results)
             self._search_worker.error.connect(

@@ -26,19 +26,26 @@ from PySide6.QtCore import Qt
 from ui.base_widget import BaseWidget
 from ui.widgets.result_gallery import ResultGallery
 from ui.widgets.result_detail import ResultDetail
+from ui.widgets.search_filter_bar import SearchFilterBar
 from ui.theme import Theme
-from models.search import SearchResponse
+from models.search import SearchQuery, SearchResponse
+from core.database import Database
 
 
 class SearchPanel(BaseWidget):
-    """Panel de busqueda visual con galeria y detalle."""
+    """Panel de busqueda visual con galeria, detalle y filtros."""
 
-    def __init__(self, parent: QWidget | None = None) -> None:
+    def __init__(
+        self,
+        database: Database | None = None,
+        parent: QWidget | None = None,
+    ) -> None:
         super().__init__(parent)
+        self._database = database
         self._setup_ui()
 
     def _setup_ui(self) -> None:
-        """Construye: barra busqueda + splitter(galeria + detalle)."""
+        """Construye: barra busqueda + filtros + splitter(galeria + detalle)."""
         # Header
         header = self.create_header("Busqueda visual")
         self.main_layout.addWidget(header)
@@ -61,6 +68,15 @@ class SearchPanel(BaseWidget):
         search_row.addWidget(self._search_btn)
 
         self.main_layout.addLayout(search_row)
+
+        # Filtros (camara, clase, fecha)
+        if self._database is not None:
+            self._filter_bar = SearchFilterBar(self._database)
+            self.main_layout.addWidget(self.create_separator())
+            self.main_layout.addWidget(self._filter_bar)
+            self.main_layout.addWidget(self.create_separator())
+        else:
+            self._filter_bar = None
 
         # Stats de busqueda
         self._stats_label = QLabel("")
@@ -114,3 +130,14 @@ class SearchPanel(BaseWidget):
     def query_text(self) -> str:
         """Texto actual del input de busqueda."""
         return self._search_input.text().strip()
+
+    def build_query(self, n_results: int = 30) -> SearchQuery:
+        """Construye SearchQuery con texto + filtros activos."""
+        if self._filter_bar is not None:
+            return self._filter_bar.build_query(self.query_text, n_results)
+        return SearchQuery(text=self.query_text, n_results=n_results)
+
+    def refresh_filters(self) -> None:
+        """Recarga las opciones de filtros (camaras disponibles)."""
+        if self._filter_bar is not None:
+            self._filter_bar.refresh()

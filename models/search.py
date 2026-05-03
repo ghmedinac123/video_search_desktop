@@ -11,7 +11,7 @@ Uso:
 
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 from pydantic import BaseModel, ConfigDict, computed_field
 
@@ -22,10 +22,23 @@ class SearchQuery(BaseModel):
     text: str
     n_results: int = 30
     min_score: float = 0.0
-    class_filter: str | None = None
+    class_filter: list[str] | None = None
+    camera_filter: list[str] | None = None
     video_filter: str | None = None
+    date_from: datetime | None = None
+    date_to: datetime | None = None
 
     model_config = ConfigDict(frozen=True)
+
+    def has_filters(self) -> bool:
+        """True si la consulta tiene algun filtro activo."""
+        return any([
+            self.class_filter,
+            self.camera_filter,
+            self.video_filter,
+            self.date_from,
+            self.date_to,
+        ])
 
 
 class SearchResult(BaseModel):

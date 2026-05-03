@@ -25,8 +25,10 @@ from pathlib import Path
 import cv2
 import numpy as np
 
+from core.events import EventBus
 from core.logger import logger
 from models.camera import CameraConfig, CameraStatus
+from models.event import EventSeverity, EventType, SecurityEvent
 from models.frame import FrameData
 from models.settings import get_settings
 
@@ -52,6 +54,8 @@ class StreamCapture:
         self._status = CameraStatus(camera_id=camera.camera_id)
         self._frame_count = 0
         self._lock = threading.Lock()
+        self._event_bus = EventBus.get_instance()
+        self._was_connected = False
 
     @property
     def camera(self) -> CameraConfig:
@@ -93,6 +97,16 @@ class StreamCapture:
                 f"[{self._camera.camera_id}] "
                 f"Conectado a: {self._camera.name}"
             )
+            # Publicar evento solo si era reconexion o primera conexion
+            if not self._was_connected:
+                self._was_connected = True
+                self._event_bus.publish(SecurityEvent(
+                    event_type=EventType.CAMERA_CONNECTED,
+                    severity=EventSeverity.INFO,
+                    camera_id=self._camera.camera_id,
+                    title=f"Camara conectada: {self._camera.name}",
+                    payload={"rtsp_url": self._camera.rtsp_url},
+                ))
             return True
 
         except Exception as e:
@@ -103,12 +117,23 @@ class StreamCapture:
 
     def disconnect(self) -> None:
         """Desconecta de la camara y libera recursos."""
+        was_running = self._running
         self._running = False
         if self._cap is not None:
             self._cap.release()
             self._cap = None
         self._status.connected = False
         logger.info(f"[{self._camera.camera_id}] Desconectado")
+        # Publicar evento solo cuando el usuario para o falla red, no en
+        # reconexiones automaticas dentro del loop
+        if was_running and self._was_connected:
+            self._was_connected = False
+            self._event_bus.publish(SecurityEvent(
+                event_type=EventType.CAMERA_DISCONNECTED,
+                severity=EventSeverity.WARNING,
+                camera_id=self._camera.camera_id,
+                title=f"Camara desconectada: {self._camera.name}",
+            ))
 
     def _save_frame(
         self, frame: np.ndarray, now: datetime
