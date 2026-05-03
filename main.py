@@ -26,16 +26,19 @@ from core.database import Database
 from core.model_manager import ModelManager
 from core.indexer import Indexer
 from core.searcher import Searcher
+from core.stream_capture import StreamCapture
 from ui.theme import Theme
 from ui.main_window import MainWindow
 from ui.widgets.model_panel import ModelPanel
 from ui.widgets.indexing_panel import IndexingPanel
 from ui.widgets.search_panel import SearchPanel
 from ui.widgets.stats_panel import StatsPanel
+from ui.widgets.camera_panel import CameraPanel
 from ui.workers.index_worker import IndexWorker
 from ui.workers.model_download_worker import ModelDownloadWorker
 from ui.workers.model_load_worker import ModelLoadWorker
 from ui.workers.search_worker import SearchWorker
+from ui.workers.stream_worker import StreamWorker
 
 
 class Application:
@@ -69,9 +72,13 @@ class Application:
         self._app = QApplication(sys.argv)
         self._app.setStyleSheet(Theme.get_stylesheet())
 
+        # Workers de streaming RTSP activos: camera_id -> StreamWorker
+        self._stream_workers: dict[str, StreamWorker] = {}
+
         # Ventana principal
         self._window = MainWindow()
         self._setup_panels()
+        self._app.aboutToQuit.connect(self._stop_all_streams)
 
     def _setup_panels(self) -> None:
         """Reemplaza placeholders por paneles reales conectados."""
@@ -91,10 +98,15 @@ class Application:
         self._connect_search()
         self._window.set_panel(2, self._search_panel)
 
-        # Panel 3: Estadisticas
+        # Panel 3: Camaras RTSP
+        self._camera_panel = CameraPanel()
+        self._connect_cameras()
+        self._window.set_panel(3, self._camera_panel)
+
+        # Panel 4: Estadisticas
         self._stats_panel = StatsPanel()
         self._stats_panel.set_database(self._db)
-        self._window.set_panel(3, self._stats_panel)
+        self._window.set_panel(4, self._stats_panel)
 
     def _connect_models(self) -> None:
         """Conecta botones Descargar/Cargar del panel Modelos con workers."""
@@ -251,6 +263,98 @@ class Application:
         """Callback cuando falla la indexacion."""
         self._indexing_panel.set_running(False)
         self._indexing_panel.show_error("Error de indexacion", message)
+
+    def _connect_cameras(self) -> None:
+        """Conecta el panel de camaras con StreamWorker + pipeline."""
+        panel = self._camera_panel
+
+        panel.start_capture.connect(self._start_stream)
+        panel.stop_capture.connect(self._stop_stream)
+        panel.start_all.connect(self._start_all_streams)
+        panel.stop_all.connect(self._stop_all_streams)
+
+    def _start_stream(self, camera_id: str) -> None:
+        """Inicia captura RTSP para UNA camara."""
+        panel = self._camera_panel
+
+        # Verificar modelos cargados
+        if not self._mm.is_ready():
+            panel.show_error(
+                "Modelos no cargados",
+                "Carga el detector + embedder en el tab Modelos primero.",
+            )
+            card = panel._cards.get(camera_id)
+            if card:
+                card.set_connected(False)
+            return
+
+        # Evitar doble inicio
+        if camera_id in self._stream_workers:
+            logger.warning(f"Stream {camera_id} ya esta activo")
+            return
+
+        camera = panel.get_camera(camera_id)
+        if camera is None:
+            panel.show_error("Error", f"Camara {camera_id} no encontrada")
+            return
+
+        capture = StreamCapture(camera)
+        worker = StreamWorker(capture=capture, indexer=self._indexer)
+        worker.status_updated.connect(panel.update_camera_status)
+        worker.error.connect(
+            lambda msg, cid=camera_id: self._on_stream_error(cid, msg)
+        )
+        worker.finished.connect(
+            lambda cid=camera_id: self._on_stream_finished(cid)
+        )
+
+        self._stream_workers[camera_id] = worker
+        worker.start()
+        logger.info(f"Stream iniciado: {camera_id} — {camera.name}")
+
+    def _stop_stream(self, camera_id: str) -> None:
+        """Detiene captura RTSP para UNA camara."""
+        worker = self._stream_workers.get(camera_id)
+        if worker is None:
+            return
+        worker.cancel()
+        logger.info(f"Stream detenido: {camera_id}")
+
+    def _start_all_streams(self) -> None:
+        """Inicia captura para todas las camaras configuradas."""
+        for camera in self._camera_panel.get_cameras():
+            if camera.enabled and camera.camera_id not in self._stream_workers:
+                card = self._camera_panel._cards.get(camera.camera_id)
+                if card:
+                    card.set_connected(True)
+                self._start_stream(camera.camera_id)
+
+    def _stop_all_streams(self) -> None:
+        """Detiene captura de todas las camaras activas."""
+        for camera_id in list(self._stream_workers.keys()):
+            self._stop_stream(camera_id)
+        # Esperar a que terminen para no perder frames en disco
+        for worker in list(self._stream_workers.values()):
+            worker.wait(3000)
+
+    def _on_stream_error(self, camera_id: str, message: str) -> None:
+        """Callback de error en un stream RTSP."""
+        logger.error(f"Stream {camera_id} error: {message}")
+        self._camera_panel.show_error(
+            f"Error en camara {camera_id}", message
+        )
+        card = self._camera_panel._cards.get(camera_id)
+        if card:
+            card.set_connected(False)
+
+    def _on_stream_finished(self, camera_id: str) -> None:
+        """Callback cuando termina el QThread del stream."""
+        self._stream_workers.pop(camera_id, None)
+        card = self._camera_panel._cards.get(camera_id)
+        if card:
+            card.set_connected(False)
+        self._stats_panel.refresh()
+        logger.info(f"Stream finalizado: {camera_id}")
 
     def _connect_search(self) -> None:
         """Conecta barra de busqueda con el SearchWorker."""

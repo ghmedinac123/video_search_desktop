@@ -6,6 +6,7 @@ Uso:
     from models import get_settings
 """
 
+from models.camera import CameraConfig, CameraStatus, CameraStore
 from models.database import CollectionStats
 from models.detection import BoundingBox, CropData
 from models.frame import FrameData
@@ -44,4 +45,8 @@ __all__: list[str] = [
     "IndexResult",
     # Database
     "CollectionStats",
+    # Cameras (RTSP v2.0)
+    "CameraConfig",
+    "CameraStatus",
+    "CameraStore",
 ]

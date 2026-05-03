@@ -92,6 +92,7 @@ class MainWindow(QMainWindow):
             _PlaceholderPanel("Modelos"),
             _PlaceholderPanel("Indexar"),
             _PlaceholderPanel("Buscar"),
+            _PlaceholderPanel("Cámaras"),
             _PlaceholderPanel("Estadísticas"),
         ]
         for panel in self._panels:
@@ -153,7 +154,7 @@ class MainWindow(QMainWindow):
         Reemplaza un panel placeholder por el widget real.
 
         Args:
-            index: 0=Modelos, 1=Indexar, 2=Buscar, 3=Stats.
+            index: 0=Modelos, 1=Indexar, 2=Buscar, 3=Cámaras, 4=Stats.
             widget: Widget real que reemplaza al placeholder.
         """
         old = self._stack.widget(index)
