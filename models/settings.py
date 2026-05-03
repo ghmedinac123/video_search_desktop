@@ -110,6 +110,12 @@ class AppSettings(BaseSettings):
         if hf_token:
             os.environ["HF_TOKEN"] = hf_token
 
+        # Silenciar warnings cosmeticos de ffmpeg/h264 al leer RTSP
+        # (los SEI type 764 truncated son metadata propietaria de Tapo
+        # que ffmpeg no entiende — no afectan el video)
+        os.environ.setdefault("OPENCV_LOG_LEVEL", "ERROR")
+        os.environ.setdefault("OPENCV_FFMPEG_LOGLEVEL", "16")
+
 
 @lru_cache(maxsize=1)
 def get_settings() -> AppSettings:
