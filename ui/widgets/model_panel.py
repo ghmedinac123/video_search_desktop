@@ -44,6 +44,9 @@ class ModelPanel(BaseWidget):
 
     def _setup_ui(self) -> None:
         """Construye las 3 secciones + controles + monitor GPU."""
+        # Escanear estado de modelos ANTES de crear las cards
+        self._mm.registry.scan_downloaded_status()
+
         # Header
         header = self.create_header("Modelos AI")
         self.main_layout.addWidget(header)
@@ -86,9 +89,6 @@ class ModelPanel(BaseWidget):
         self.main_layout.addLayout(btn_row)
 
         self.main_layout.addStretch()
-
-        # Escanear estado de modelos
-        self._mm.registry.scan_downloaded_status()
 
     def _add_model_section(self, title: str, model_type: AIModelType) -> None:
         """Agrega una seccion con cards de modelos del tipo dado."""
