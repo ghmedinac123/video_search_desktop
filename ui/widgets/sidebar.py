@@ -103,7 +103,8 @@ class Sidebar(QWidget):
         ("\U0001f9e0", "Modelos"),
         ("\U0001f4e5", "Indexar"),
         ("\U0001f50d", "Buscar"),
-        ("\U0001f4ca", "Estad?sticas"),
+        ("\U0001f4f9", "Cámaras"),
+        ("\U0001f4ca", "Estadísticas"),
     ]
 
     def __init__(self, parent: QWidget | None = None) -> None:

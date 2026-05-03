@@ -33,6 +33,7 @@ from core.frame_extractor import FrameExtractor
 from core.logger import logger
 from core.model_manager import ModelManager
 from models.detection import BoundingBox, CropData
+from models.frame import FrameData
 from models.indexing import IndexProgress, IndexResult, IndexStage
 from models.settings import AppSettings, get_settings
 
@@ -63,6 +64,9 @@ class Indexer:
         self._is_cancelled = False
         self._pause_event = threading.Event()
         self._pause_event.set()  # No pausado inicialmente
+
+        # Lock para serializar acceso a la GPU desde multiples streams RTSP
+        self._gpu_lock = threading.Lock()
 
     def index_video(
         self,
@@ -253,6 +257,110 @@ class Indexer:
         )
 
         return result
+
+    def process_single_frame(
+        self,
+        frame_data: FrameData,
+        frame_image: np.ndarray,
+        camera_id: str,
+    ) -> int:
+        """
+        Procesa UN frame con el pipeline completo: detect + embed + describe + store.
+
+        Reutilizable tanto para video grabado como para captura RTSP en vivo.
+        Llamado por StreamWorker en cada frame capturado.
+
+        Args:
+            frame_data: Metadata del frame (frame_index, timestamp, paths).
+            frame_image: Imagen BGR (np.ndarray HxWx3).
+            camera_id: ID de la fuente — para una camara, su camera_id.
+
+        Returns:
+            Cantidad de detecciones almacenadas. 0 si no hay detecciones
+            relevantes (frames sin objetos se descartan automaticamente).
+        """
+        if not self._mm.is_ready():
+            return 0
+
+        with self._gpu_lock:
+            # ── Detectar ──
+            raw_crops = self._mm.detector.detect(
+                frame_image,
+                confidence=self._settings.yolo_confidence,
+            )
+
+            if not raw_crops:
+                return 0
+
+            # Preparar directorio de crops por camara
+            crops_dir = self._settings.crops_dir / camera_id
+            crops_dir.mkdir(parents=True, exist_ok=True)
+
+            stored = 0
+            h, w = frame_image.shape[:2]
+            pad = self._settings.crop_padding
+
+            for det_idx, crop_data in enumerate(raw_crops):
+                # Completar metadata
+                crop_id = (
+                    f"{camera_id}__"
+                    f"f{frame_data.frame_index:06d}__"
+                    f"d{det_idx:03d}"
+                )
+                crop_data.crop_id = crop_id
+                crop_data.frame_path = frame_data.frame_path
+                crop_data.video_source = frame_data.video_source
+                crop_data.timestamp_seconds = frame_data.timestamp_seconds
+
+                # Recortar imagen del crop
+                bbox = crop_data.bbox
+                cx1 = max(0, bbox.x1 - pad)
+                cy1 = max(0, bbox.y1 - pad)
+                cx2 = min(w, bbox.x2 + pad)
+                cy2 = min(h, bbox.y2 + pad)
+                crop_image = frame_image[cy1:cy2, cx1:cx2]
+
+                if crop_image.size == 0:
+                    continue
+
+                # Guardar crop en disco
+                crop_filename = (
+                    f"f{frame_data.frame_index:06d}_"
+                    f"d{det_idx:03d}_{crop_data.class_name}.jpg"
+                )
+                crop_path = crops_dir / crop_filename
+                cv2.imwrite(str(crop_path), crop_image)
+                crop_data.crop_path = crop_path
+
+                # ── Embed ──
+                embedding = self._mm.embedder.embed_image(crop_image)
+
+                # ── Describe (opcional) ──
+                description = ""
+                if self._mm.describer is not None and self._mm.describer.is_loaded():
+                    description = self._mm.describer.describe(crop_image)
+                    crop_data.description = description
+
+                # ── Store ──
+                self._db.store(
+                    crop_id=crop_id,
+                    embedding=embedding,
+                    metadata={
+                        "class_name": crop_data.class_name,
+                        "confidence": crop_data.confidence,
+                        "timestamp_seconds": crop_data.timestamp_seconds,
+                        "video_source": str(crop_data.video_source),
+                        "camera_id": camera_id,
+                        "frame_path": str(crop_data.frame_path),
+                        "crop_path": str(crop_data.crop_path),
+                        "bbox": f"[{bbox.x1},{bbox.y1},{bbox.x2},{bbox.y2}]",
+                        "description": description,
+                    },
+                    description=description,
+                )
+                stored += 1
+
+            return stored
 
     # ── Control de flujo ──
 
