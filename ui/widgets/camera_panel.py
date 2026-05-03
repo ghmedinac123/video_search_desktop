@@ -14,6 +14,9 @@ Uso:
 
 from __future__ import annotations
 
+import cv2
+import numpy as np
+
 from PySide6.QtWidgets import (
     QWidget,
     QLabel,
@@ -27,6 +30,7 @@ from PySide6.QtWidgets import (
     QFrame,
 )
 from PySide6.QtCore import Qt, Signal, QTimer
+from PySide6.QtGui import QImage, QPixmap
 
 from ui.base_widget import BaseWidget
 from ui.theme import Theme
@@ -83,6 +87,19 @@ class _CameraCard(BaseWidget):
         url_label.setProperty("class", "muted")
         url_label.setStyleSheet(f"font-size: {Theme.FONT_SIZE_SMALL}px;")
         card_layout.addWidget(url_label)
+
+        # Visor de video en vivo (estilo NVR)
+        self._preview_label = QLabel("Sin señal — conecta para ver el video")
+        self._preview_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._preview_label.setMinimumHeight(270)
+        self._preview_label.setMaximumHeight(360)
+        self._preview_label.setStyleSheet(
+            "background-color: #000;"
+            "color: #666;"
+            "border-radius: 6px;"
+            f"font-size: {Theme.FONT_SIZE_SMALL}px;"
+        )
+        card_layout.addWidget(self._preview_label)
 
         # Fila 3: stats en vivo
         row3 = self.create_horizontal_layout()
@@ -144,6 +161,43 @@ class _CameraCard(BaseWidget):
             self._toggle_btn.setText("Desconectar")
         else:
             self._toggle_btn.setText("Conectar")
+            self._preview_label.clear()
+            self._preview_label.setText("Sin señal — conecta para ver el video")
+
+    def update_preview(self, frame_bgr: np.ndarray) -> None:
+        """Actualiza el visor con el frame en vivo (BGR de OpenCV)."""
+        if frame_bgr is None or frame_bgr.size == 0:
+            return
+
+        # Escalar al ancho del label manteniendo aspecto
+        target_w = max(self._preview_label.width(), 480)
+        h, w = frame_bgr.shape[:2]
+        if w != target_w:
+            scale = target_w / w
+            new_h = int(h * scale)
+            frame_bgr = cv2.resize(
+                frame_bgr, (target_w, new_h), interpolation=cv2.INTER_AREA
+            )
+            h, w = new_h, target_w
+
+        # Limitar altura al maximo del label
+        max_h = self._preview_label.maximumHeight()
+        if h > max_h:
+            scale = max_h / h
+            new_w = int(w * scale)
+            frame_bgr = cv2.resize(
+                frame_bgr, (new_w, max_h), interpolation=cv2.INTER_AREA
+            )
+            h, w = max_h, new_w
+
+        # BGR -> RGB para Qt
+        frame_rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
+        bytes_per_line = 3 * w
+        qimg = QImage(
+            frame_rgb.data, w, h, bytes_per_line,
+            QImage.Format.Format_RGB888,
+        ).copy()
+        self._preview_label.setPixmap(QPixmap.fromImage(qimg))
 
 
 class _AddCameraDialog(QDialog):
@@ -382,6 +436,12 @@ class CameraPanel(BaseWidget):
         card = self._cards.get(status.camera_id)
         if card:
             card.update_status(status)
+
+    def update_camera_preview(self, camera_id: str, frame: np.ndarray) -> None:
+        """Actualiza el visor de video en vivo de una camara."""
+        card = self._cards.get(camera_id)
+        if card:
+            card.update_preview(frame)
 
     def get_cameras(self) -> list[CameraConfig]:
         """Retorna lista de camaras configuradas."""

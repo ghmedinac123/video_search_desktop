@@ -104,28 +104,15 @@ class StreamCapture:
         self._status.connected = False
         logger.info(f"[{self._camera.camera_id}] Desconectado")
 
-    def read_frame(self) -> tuple[FrameData, np.ndarray] | None:
-        """
-        Lee UN frame de la camara.
-
-        Retorna tupla (FrameData, imagen BGR) o None si falla.
-        """
-        if self._cap is None or not self._cap.isOpened():
-            return None
-
-        ret, frame = self._cap.read()
-        if not ret or frame is None:
-            return None
-
+    def _save_frame(
+        self, frame: np.ndarray, now: datetime
+    ) -> FrameData:
+        """Guarda un frame a disco e incrementa el contador."""
         settings = get_settings()
-        now = datetime.now()
-        timestamp = now.timestamp()
-
-        # Directorio para frames de esta camara
         cam_frames_dir = settings.frames_dir / self._camera.camera_id
         cam_frames_dir.mkdir(parents=True, exist_ok=True)
 
-        # Guardar frame en disco
+        self._frame_count += 1
         frame_filename = (
             f"{self._camera.camera_id}_"
             f"{now.strftime('%Y%m%d_%H%M%S')}_"
@@ -134,56 +121,65 @@ class StreamCapture:
         frame_path = cam_frames_dir / frame_filename
         cv2.imwrite(str(frame_path), frame)
 
-        self._frame_count += 1
+        self._status.frames_captured = self._frame_count
+        self._status.last_frame_time = now.strftime("%H:%M:%S")
 
-        frame_data = FrameData(
+        return FrameData(
             frame_index=self._frame_count,
-            timestamp_seconds=timestamp,
+            timestamp_seconds=now.timestamp(),
             frame_path=frame_path,
             video_source=Path(self._camera.rtsp_url),
             width=frame.shape[1],
             height=frame.shape[0],
         )
 
-        # Actualizar status
-        self._status.frames_captured = self._frame_count
-        self._status.last_frame_time = now.strftime("%H:%M:%S")
-
-        return frame_data, frame
-
     def capture_loop(
         self,
         on_frame: callable | None = None,
         on_status: callable | None = None,
+        on_preview: callable | None = None,
     ) -> None:
         """
         Loop principal de captura. Llamado por StreamWorker.
 
-        Lee un frame cada N segundos (segun camera.interval_seconds).
-        Pasa cada frame al callback on_frame para procesamiento.
+        Lee frames continuamente desde la camara para preview en vivo
+        (~10 fps en UI). Procesa con AI solo cada `interval_seconds`.
 
         Args:
-            on_frame: callback(frame_data, frame_image, camera_id)
-            on_status: callback(camera_status) para actualizar UI
+            on_frame: callback(frame_data, frame_image, camera_id) — AI pipeline.
+            on_status: callback(camera_status) — actualiza stats en UI.
+            on_preview: callback(frame_image, camera_id) — frame en vivo
+                        para mostrar el video como un NVR.
         """
         if not self.connect():
             return
 
         self._running = True
         interval = self._camera.interval_seconds
+        preview_interval = 1.0 / 10.0  # ~10 fps de preview en UI
+        status_interval = 1.0           # status cada 1 seg
+
         t0 = time.time()
+        last_process = 0.0
+        last_preview = 0.0
+        last_status = 0.0
 
         logger.info(
             f"[{self._camera.camera_id}] "
-            f"Captura iniciada — intervalo: {interval}s"
+            f"Captura iniciada — intervalo AI: {interval}s, preview: 10 fps"
         )
 
         while self._running:
             try:
-                result = self.read_frame()
+                if self._cap is None or not self._cap.isOpened():
+                    self.disconnect()
+                    time.sleep(2)
+                    if not self.connect():
+                        break
+                    continue
 
-                if result is None:
-                    # Intentar reconectar
+                ret, frame = self._cap.read()
+                if not ret or frame is None:
                     logger.warning(
                         f"[{self._camera.camera_id}] Frame perdido, reconectando..."
                     )
@@ -197,28 +193,36 @@ class StreamCapture:
                         break
                     continue
 
-                frame_data, frame_image = result
+                now = time.time()
 
-                # Calcular FPS de procesamiento
-                elapsed = time.time() - t0
-                if elapsed > 0:
-                    self._status.fps_processing = round(
-                        self._frame_count / elapsed, 1
-                    )
+                # Preview en vivo a ~10 fps
+                if on_preview and (now - last_preview) >= preview_interval:
+                    last_preview = now
+                    on_preview(frame.copy(), self._camera.camera_id)
 
-                # Pasar frame al pipeline (callback)
-                if on_frame:
+                # Procesar con AI cada `interval` segundos
+                if on_frame and (now - last_process) >= interval:
+                    last_process = now
+                    frame_data = self._save_frame(frame, datetime.now())
                     detections = on_frame(
-                        frame_data, frame_image, self._camera.camera_id
+                        frame_data, frame, self._camera.camera_id
                     )
                     self._status.detections_total += detections
 
-                self._status.error_message = ""
-                if on_status:
-                    on_status(self._status)
+                # Actualizar status periodicamente
+                if (now - last_status) >= status_interval:
+                    last_status = now
+                    elapsed = now - t0
+                    if elapsed > 0:
+                        self._status.fps_processing = round(
+                            self._frame_count / elapsed, 2
+                        )
+                    self._status.error_message = ""
+                    if on_status:
+                        on_status(self._status)
 
-                # Esperar intervalo
-                time.sleep(interval)
+                # Pequeno sleep para no saturar CPU (max ~30 fps de read)
+                time.sleep(0.03)
 
             except Exception as e:
                 logger.error(f"[{self._camera.camera_id}] Error en loop: {e}")

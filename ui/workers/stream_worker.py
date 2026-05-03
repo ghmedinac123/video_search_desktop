@@ -31,6 +31,7 @@ class StreamWorker(BaseWorker):
 
     status_updated = Signal(object)
     detection_count = Signal(str, int)
+    preview_frame = Signal(str, object)
 
     def __init__(
         self,
@@ -45,7 +46,8 @@ class StreamWorker(BaseWorker):
         """
         Ejecuta el loop de captura.
 
-        Cada frame se pasa al Indexer.process_single_frame()
+        Frames de preview se emiten via preview_frame para video en vivo.
+        Frames AI cada N segundos pasan al Indexer.process_single_frame()
         que REUTILIZA todo el pipeline: YOLO + CLIP + VLM + ChromaDB.
         """
         camera_id = self._capture.camera.camera_id
@@ -68,9 +70,16 @@ class StreamWorker(BaseWorker):
             """Callback: actualiza UI con estado de la camara."""
             self.status_updated.emit(status)
 
+        def on_preview(frame_image, cam_id):
+            """Callback: emite frame en vivo para mostrar como NVR."""
+            if self.is_cancelled:
+                return
+            self.preview_frame.emit(cam_id, frame_image)
+
         self._capture.capture_loop(
             on_frame=on_frame,
             on_status=on_status,
+            on_preview=on_preview,
         )
 
     def cancel(self) -> None:

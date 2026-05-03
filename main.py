@@ -301,6 +301,7 @@ class Application:
         capture = StreamCapture(camera)
         worker = StreamWorker(capture=capture, indexer=self._indexer)
         worker.status_updated.connect(panel.update_camera_status)
+        worker.preview_frame.connect(panel.update_camera_preview)
         worker.error.connect(
             lambda msg, cid=camera_id: self._on_stream_error(cid, msg)
         )
