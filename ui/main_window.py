@@ -93,6 +93,7 @@ class MainWindow(QMainWindow):
             _PlaceholderPanel("Indexar"),
             _PlaceholderPanel("Buscar"),
             _PlaceholderPanel("Cámaras"),
+            _PlaceholderPanel("Eventos"),
             _PlaceholderPanel("Estadísticas"),
         ]
         for panel in self._panels:

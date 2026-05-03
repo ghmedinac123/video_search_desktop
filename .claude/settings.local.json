@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(uv run python -c ' *)",
+      "Bash(xxd)",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(git -C \"F:/proyectos/video_search_desktop\" merge claude/elated-bose-06f8d4 --no-ff -m \"Merge: fix badges modelos descargados\")",
+      "Bash(git -C \"F:/proyectos/video_search_desktop\" merge claude/elated-bose-06f8d4 --no-ff -m \"Merge: visor de video en vivo en cards de camara\")",
+      "Bash(git -C \"F:/proyectos/video_search_desktop\" merge claude/elated-bose-06f8d4 --no-ff -m \"Merge: silenciar warnings h264 SEI\")"
+    ]
+  }
+}

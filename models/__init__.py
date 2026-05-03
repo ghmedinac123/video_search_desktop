@@ -9,6 +9,7 @@ Uso:
 from models.camera import CameraConfig, CameraStatus, CameraStore
 from models.database import CollectionStats
 from models.detection import BoundingBox, CropData
+from models.event import EventSeverity, EventType, SecurityEvent
 from models.frame import FrameData
 from models.gpu import GPUInfo, VRAMStatus
 from models.indexing import IndexProgress, IndexResult, IndexStage
@@ -49,4 +50,8 @@ __all__: list[str] = [
     "CameraConfig",
     "CameraStatus",
     "CameraStore",
+    # Eventos de seguridad (Observer pattern)
+    "SecurityEvent",
+    "EventType",
+    "EventSeverity",
 ]

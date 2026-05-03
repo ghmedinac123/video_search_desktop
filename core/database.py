@@ -105,22 +105,52 @@ class Database:
         self,
         query_embedding: list[float],
         n_results: int = 30,
+        class_filter: list[str] | None = None,
+        camera_filter: list[str] | None = None,
+        date_from: float | None = None,
+        date_to: float | None = None,
     ) -> list[SearchResult]:
         """
-        Busca los crops más similares al embedding de consulta.
+        Busca los crops más similares al embedding de consulta, con filtros.
 
         Args:
             query_embedding: Vector generado por CLIP desde texto.
             n_results: Cantidad máxima de resultados.
+            class_filter: Lista de clases YOLO permitidas (ej: ["person","car"]).
+            camera_filter: Lista de camara_id permitidos.
+            date_from: Timestamp UNIX minimo (segundos).
+            date_to: Timestamp UNIX maximo (segundos).
 
         Returns:
             Lista de SearchResult ordenados por score descendente.
         """
-        raw = self._collection.query(
+        where_clauses: list[dict] = []
+        if class_filter:
+            where_clauses.append({"class_name": {"$in": list(class_filter)}})
+        if camera_filter:
+            where_clauses.append({"camera_id": {"$in": list(camera_filter)}})
+        if date_from is not None:
+            where_clauses.append({"timestamp_seconds": {"$gte": float(date_from)}})
+        if date_to is not None:
+            where_clauses.append({"timestamp_seconds": {"$lte": float(date_to)}})
+
+        where: dict | None
+        if not where_clauses:
+            where = None
+        elif len(where_clauses) == 1:
+            where = where_clauses[0]
+        else:
+            where = {"$and": where_clauses}
+
+        kwargs = dict(
             query_embeddings=[query_embedding],
             n_results=n_results,
             include=["metadatas", "distances", "documents"],
         )
+        if where is not None:
+            kwargs["where"] = where
+
+        raw = self._collection.query(**kwargs)
 
         results: list[SearchResult] = []
 
