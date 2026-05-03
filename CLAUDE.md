@@ -117,45 +117,66 @@ explicit = true
 19. **Dependencias faltantes** — einops, timm, torchao → agregados con `uv add`
 20. **transformers 5.x** — Rompe Moondream → pinned a `>=4.46,<5.0`
 
-## Arquitectura
+## Arquitectura (event-driven, SOLID)
 
 ```
 main.py                        <- Clase Application ensambla core + UI
 ├── core/                      <- Backend (NO importa nada de ui/)
 │   ├── logger.py              <- Loguru centralizado
-│   ├── gpu_utils.py           <- GPUUtils estatico (usa total_memory, 1024**3)
+│   ├── gpu_utils.py           <- GPUUtils estatico
 │   ├── model_registry.py      <- Catalogo 6 modelos + Factory + SECURITY_CLASSES
 │   ├── model_manager.py       <- Singleton thread-safe
-│   ├── database.py            <- ChromaDB embebido, Repository
+│   ├── database.py            <- ChromaDB embebido + filtros where ($and/$in/$gte)
 │   ├── frame_extractor.py     <- Video -> frames
-│   ├── stream_capture.py      <- Camara RTSP -> frames (v2.0, NO conectado aun)
-│   ├── indexer.py             <- Pipeline: detect+embed+describe+store
-│   ├── searcher.py            <- Texto -> CLIP embed -> ChromaDB query coseno
-│   ├── detectors/
-│   │   ├── base_detector.py   <- ABC
-│   │   └── yolo_detector.py   <- SECURITY_CLASSES filter (persona, carro, animal, mochila)
-│   ├── embedders/
-│   │   ├── base_embedder.py   <- ABC
-│   │   └── clip_embedder.py   <- AutoModel directo (NO sentence-transformers)
-│   └── describers/
-│       ├── base_describer.py  <- ABC
-│       ├── qwen_describer.py  <- Hereda BaseDescriber (espanol, NO probado)
-│       └── moondream_describer.py <- fp16, vikhyatk/moondream2 (SIN torchao)
+│   ├── stream_capture.py      <- RTSP continuo + preview 10fps + AI cada Ns
+│   ├── indexer.py             <- Pipeline: detect+embed+describe+store + tamper
+│   ├── searcher.py            <- Texto -> CLIP -> DB con filtros multi-criterio
+│   ├── detectors/             <- BaseDetector ABC + YOLODetector
+│   ├── embedders/             <- BaseEmbedder ABC + CLIPEmbedder
+│   ├── describers/            <- BaseDescriber ABC + Moondream/Qwen
+│   ├── events/                <- ★ Observer pattern (event-driven core)
+│   │   └── event_bus.py       <- Singleton Qt-based EventBus thread-safe
+│   ├── alerts/                <- ★ Notificaciones (Strategy + Mediator)
+│   │   ├── base_notifier.py   <- ABC + template method handle()
+│   │   ├── telegram_notifier.py <- POST a Bot API con foto
+│   │   └── alert_manager.py   <- Singleton, distribuye en threads
+│   ├── tamper/                <- ★ Anti-tamper (Strategy)
+│   │   ├── base_tamper_detector.py <- ABC + TamperResult
+│   │   ├── black_screen_detector.py <- brillo + varianza
+│   │   ├── scene_change_detector.py <- histograma Bhattacharyya
+│   │   └── tamper_manager.py  <- una instancia por camara con cooldown
+│   ├── export/                <- ★ Exportadores (Strategy)
+│   │   ├── base_exporter.py   <- ABC export(events, path)
+│   │   ├── evidence_exporter.py <- ZIP forense + manifest + SHA256
+│   │   └── pdf_reporter.py    <- STUB Tier 3 (reportlab)
+│   ├── recognition/           <- ★ STUB Tier 3 (faces)
+│   │   ├── base_recognizer.py <- ABC RecognitionResult
+│   │   └── face_recognizer.py <- placeholder InsightFace/Buffalo
+│   └── ocr/                   <- ★ STUB Tier 3 (placas)
+│       ├── base_ocr.py        <- ABC OCRResult
+│       └── plate_ocr.py       <- placeholder PaddleOCR + regex placas
 ├── models/                    <- Pydantic v2
 │   ├── settings.py            <- AppSettings + setup_model_environment()
-│   ├── camera.py              <- CameraConfig + CameraStore (v2.0)
-│   └── ... (16 modelos tipados)
+│   ├── camera.py              <- CameraConfig + CameraStore
+│   ├── event.py               <- ★ SecurityEvent + EventType + EventSeverity
+│   └── ... (16+ modelos tipados)
 └── ui/                        <- PySide6 frontend
-    ├── theme.py               <- Dark/light mode
+    ├── theme.py
     ├── base_widget.py         <- Clase base TODOS los paneles heredan
-    ├── main_window.py         <- QMainWindow + sidebar + stack
-    ├── widgets/ (13)          <- Componentes visuales
-    │   ├── camera_panel.py    <- CRUD camaras (EXISTE pero NO conectado)
+    ├── main_window.py         <- QMainWindow + sidebar + stack (6 paneles)
+    ├── widgets/
+    │   ├── alert_badge.py     <- ★ Badge parpadeante reutilizable
+    │   ├── camera_panel.py    <- Cards con preview, bboxes, alert_badge
+    │   ├── event_history_panel.py <- ★ Feed cronologico (suscriptor bus)
+    │   ├── search_filter_bar.py <- ★ Camaras + clases + fechas
+    │   ├── search_panel.py    <- Integra search_filter_bar
     │   └── ...
-    └── workers/ (6)           <- QThread workers (heredan BaseWorker)
-        ├── stream_worker.py   <- Captura RTSP (EXISTE pero NO conectado)
+    └── workers/               <- QThread workers (heredan BaseWorker)
+        ├── stream_worker.py   <- Lectura continua RTSP + preview con bboxes
         └── ...
 ```
+
+★ = nuevos modulos de la arquitectura empresarial event-driven.
 
 ## Regla de dependencia
 
@@ -188,35 +209,129 @@ models_cache/
   - URL RTSP: rtsp://admin:admin@IP:554/live/ch00_1 (HD) o /live/ch00_0 (SD)
 - Recomendacion futura: Tapo C200 ($19 USD) — RTSP nativo sin trucos
 
-## Pipeline v1.0 — FUNCIONANDO ✅
+## Pipeline v1.0 — FUNCIONANDO ✅ (video grabado)
 
 ```
 Video .mp4 → Extraer frames cada 2s → YOLO26 detecta (filtro SECURITY_CLASSES)
-→ CLIP vectoriza imagen (AutoModel.get_image_features) → Moondream describe (fp16)
+→ CLIP vectoriza imagen → Moondream describe (fp16)
 → ChromaDB almacena (embedding + metadata + ruta crop)
-→ Busqueda: texto → CLIP vectoriza (AutoModel.get_text_features) → coseno → resultados
+→ Busqueda: texto → CLIP vectoriza → coseno → resultados
 ```
 
-Probado: 21 frames, 2 detecciones personas, 2.6 segundos, busqueda 96ms.
+## Pipeline v2.0 — FUNCIONANDO ✅ (RTSP en vivo, estilo NVR)
 
-## PENDIENTE — Conectar camaras RTSP v2.0
+```
+RTSP continuo (~30fps) → preview UI (10fps con bboxes YOLO) →
+cada interval_seconds → AI pipeline (YOLO+CLIP+Moondream) →
+process_single_frame() → publica SecurityEvent.DETECTION al EventBus →
+[suscriptores: AlertBadge UI, EventHistoryPanel, AlertManager → Telegram]
+```
 
-5 archivos a modificar:
-1. **core/indexer.py** → agregar `process_single_frame()` para frames individuales de RTSP
-2. **models/__init__.py** → agregar imports de camera
-3. **ui/widgets/sidebar.py** → agregar 5to boton "Camaras" en SECTIONS
-4. **ui/main_window.py** → agregar 5to panel CameraPanel al stack
-5. **main.py** → conectar CameraPanel con StreamWorker y pipeline
+Probado con Tapo C200/C236 a `rtsp://USER:PASS@IP:554/stream1`.
+Busqueda instantanea (<100ms) sobre eventos en vivo + videos historicos.
 
-Los archivos stream_capture.py, stream_worker.py, camera_panel.py, camera.py YA EXISTEN.
-Solo falta ensamblarlos en la app.
+## Sistema event-driven (Observer + Strategy + Mediator)
 
-## PENDIENTE — Mejoras futuras
+EventBus = QObject singleton thread-safe. Publishers (Indexer,
+StreamCapture, TamperManager) publican SecurityEvent. Subscribers (UI,
+AlertManager, EventHistoryPanel) reaccionan sin acoplarse.
 
-- HF_TOKEN en .env para descargas mas rapidas (usuario tiene cuenta: ghmedinac)
-- Reconocimiento facial (InsightFace/Buffalo)
-- Placas vehiculos (PaddleOCR)
-- Alertas Telegram
-- Deteccion caidas (YOLO-Pose)
-- PyInstaller + Inno Setup para instalador .exe
+```python
+# Publicar
+EventBus.get_instance().publish(SecurityEvent(
+    event_type=EventType.DETECTION,
+    camera_id="tapo01",
+    severity=EventSeverity.WARNING,
+    title="Persona detectada",
+    payload={"classes": ["person"], "count": 1},
+))
+
+# Suscribir
+EventBus.get_instance().subscribe(my_callback)
+```
+
+### Tipos de evento (models/event.py)
+- DETECTION: AI detecto algo (severity=WARNING si person, INFO si vehiculo)
+- TAMPER: BlackScreen o SceneChange disparo (severity=CRITICAL/WARNING)
+- CAMERA_CONNECTED / CAMERA_DISCONNECTED
+- NOTIFICATION_SENT / SYSTEM
+
+### Para agregar un canal de notificacion nuevo
+```python
+from core.alerts.base_notifier import BaseNotifier
+
+class WhatsAppNotifier(BaseNotifier):
+    def __init__(self):
+        super().__init__("WhatsApp", min_severity=EventSeverity.CRITICAL)
+    def send(self, event: SecurityEvent) -> bool:
+        # tu integracion HTTP aqui
+        return True
+
+AlertManager.get_instance().register(WhatsAppNotifier())
+```
+
+### Para agregar un detector anti-tamper nuevo
+```python
+from core.tamper.base_tamper_detector import BaseTamperDetector, TamperResult
+
+class BlurDetector(BaseTamperDetector):
+    def __init__(self):
+        super().__init__("BlurDetector")
+    def analyze(self, frame_bgr) -> TamperResult:
+        variance = cv2.Laplacian(frame_bgr, cv2.CV_64F).var()
+        if variance < 50:
+            return TamperResult(triggered=True, reason="lens_blur",
+                                metric=variance, severity=EventSeverity.WARNING)
+        return TamperResult(triggered=False)
+
+# El TamperManager del Indexer lo agrega al pipeline
+```
+
+## Variables de entorno opcionales (.env)
+
+```env
+HF_TOKEN=                # Token HuggingFace para descargas mas rapidas
+TELEGRAM_BOT_TOKEN=      # Bot creado con @BotFather
+TELEGRAM_CHAT_ID=        # Chat ID destino (obtener con @userinfobot)
+```
+
+Si TELEGRAM_BOT_TOKEN o TELEGRAM_CHAT_ID faltan, el TelegramNotifier
+se auto-deshabilita silenciosamente (log INFO, no error).
+
+## Estado de features por Tier
+
+### Tier 1 — completado ✅
+- Bounding boxes en preview en vivo (cv2.rectangle por clase con label)
+- Alert badge parpadeante por severidad (verde/naranja/rojo)
+- Filtros busqueda multi-criterio (camara, clases YOLO, rango fechas)
+- Historial de eventos con thumbnails clickables y dialogo detalle
+
+### Tier 2 — parcialmente completado
+- ✅ TelegramNotifier (auto-deshabilita sin token)
+- ✅ Anti-tamper: BlackScreenDetector + SceneChangeDetector + cooldown
+- ⏳ Grid 1/4/9 camaras simultaneas (refactor UI grande)
+- ⏳ ROI zones (canvas drawing + persistencia poligonos)
+
+### Tier 3 — interfaces listas, implementacion pendiente
+- ✅ ABC BaseRecognizer + FaceRecognizer stub (`uv add insightface onnxruntime-gpu`)
+- ✅ ABC BaseOCR + PlateOCR stub con regex de placas LATAM
+- ✅ EvidenceExporter (ZIP forense + manifest.json + chain_of_custody.txt con SHA256)
+- ✅ ABC BaseExporter + PdfReporter stub (`uv add reportlab`)
+- ⏳ Re-identificacion cross-camera (OSNet o similar)
+
+### Tier 4 — futuro
+- Deteccion de comportamiento (loitering, peleas, caidas con YOLO-Pose)
+- Heatmap de actividad
+- Multi-tenant + autenticacion
+
+## Camaras del usuario
+
+- 1x Tapo C200/C236: `rtsp://USER:PASS@IP:554/stream1` (HD) o `/stream2` (SD)
+  — funciona out of the box con RTSP nativo
+- 3x Blurams 2K: NO soportan RTSP, solo app propietaria → sirven para grabar .mp4
+
+## Otras mejoras pendientes
+
 - Activar Developer Mode en Windows para symlinks de HuggingFace
+- PyInstaller + Inno Setup para instalador .exe
+- Tests automatizados (pytest)

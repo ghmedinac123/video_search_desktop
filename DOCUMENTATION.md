@@ -1588,3 +1588,311 @@ Thumbs.db
 # Env (tiene secretos potenciales)
 .env
 ```
+
+---
+
+## 15. FASE 9 — ARQUITECTURA EMPRESARIAL EVENT-DRIVEN (v2.0)
+
+> Esta fase agrega los Tier 1 y Tier 2 del roadmap NVR profesional,
+> mas las interfaces (ABCs) listas para implementar Tier 3.
+
+### 15.1 Vision
+
+Pasar de "app local de busqueda en videos" a **plataforma de seguridad
+con IA tipo NVR profesional**: visor en vivo con bounding boxes,
+historial de eventos, alertas push (Telegram), anti-tamper, exportacion
+forense con cadena de custodia, e interfaces extensibles para
+reconocimiento facial / OCR / reportes PDF.
+
+### 15.2 Patron de diseno central: Event-Driven
+
+Toda comunicacion entre subsistemas pasa por un **EventBus singleton
+Qt-based**. Publishers no conocen subscribers; suscribers no conocen
+publishers. Esto desacopla completamente:
+
+```
+       ┌───────────────────────────────┐
+       │       EventBus singleton      │
+       │   (Observer pattern hub)      │
+       │   Qt::QueuedConnection        │
+       │   thread-safe cross-thread    │
+       └─────────┬─────────────────────┘
+                 │ publish(SecurityEvent)
+   ┌─────────────┼──────────────────┐
+   │             │                  │
+PUBLISHERS  SUBSCRIBERS-CORE    SUBSCRIBERS-UI
+   │             │                  │
+Indexer       AlertManager     EventHistoryPanel
+StreamCapture (Mediator)       _CameraCard.alert_badge
+TamperManager     │
+                  │ delega a:
+                  ▼
+             ┌────────────┐
+             │BaseNotifier│ ABC
+             ├────────────┤
+             │ Telegram   │ implementacion concreta
+             │ (futuro:   │
+             │  Email,    │
+             │  Push,     │
+             │  Webhook)  │
+             └────────────┘
+```
+
+### 15.3 Modelos nuevos
+
+#### models/event.py — SecurityEvent
+
+```python
+class EventType(str, Enum):
+    DETECTION = "detection"
+    CAMERA_CONNECTED = "camera_connected"
+    CAMERA_DISCONNECTED = "camera_disconnected"
+    TAMPER = "tamper"
+    NOTIFICATION_SENT = "notification_sent"
+    SYSTEM = "system"
+
+class EventSeverity(str, Enum):
+    INFO = "info"
+    WARNING = "warning"
+    CRITICAL = "critical"
+
+class SecurityEvent(BaseModel):
+    event_id: str = Field(default_factory=uuid)
+    event_type: EventType
+    severity: EventSeverity = EventSeverity.INFO
+    camera_id: str
+    timestamp: datetime
+    title: str
+    message: str = ""
+    thumbnail_path: Path | None = None
+    payload: dict[str, Any] = {}  # type-specific data
+```
+
+### 15.4 Modulos nuevos en core/
+
+#### core/events/event_bus.py — Singleton
+
+```python
+class EventBus(QObject):
+    event_published = Signal(object)  # SecurityEvent
+
+    @classmethod
+    def get_instance(cls) -> "EventBus": ...
+    def publish(self, event: SecurityEvent) -> None: ...
+    def subscribe(self, callback) -> None: ...
+    def unsubscribe(self, callback) -> None: ...
+```
+
+Thread-safe. Cualquier hilo publica; los subscribers reciben en su
+propio hilo via QueuedConnection automatica.
+
+#### core/alerts/ — Notificadores polimorficos
+
+| Archivo | Responsabilidad |
+|---|---|
+| `base_notifier.py` | ABC con template method `handle()` que filtra por severidad y delega a `send()` |
+| `telegram_notifier.py` | Implementa `send()` con HTTP POST a Bot API + foto opcional |
+| `alert_manager.py` | Singleton suscrito al EventBus que distribuye eventos a notificadores en threads aparte |
+
+Para agregar un canal nuevo:
+```python
+class EmailNotifier(BaseNotifier):
+    def __init__(self): super().__init__("Email", min_severity=EventSeverity.WARNING)
+    def send(self, event): ...  # tu integracion SMTP
+
+AlertManager.get_instance().register(EmailNotifier())
+```
+
+#### core/tamper/ — Anti-tamper polimorfico
+
+| Archivo | Responsabilidad |
+|---|---|
+| `base_tamper_detector.py` | ABC `analyze(frame) -> TamperResult` |
+| `black_screen_detector.py` | Brillo medio + varianza baja → lente cubierta |
+| `scene_change_detector.py` | Distancia Bhattacharyya entre histogramas → camara movida |
+| `tamper_manager.py` | Una instancia por camara; itera detectores con cooldown |
+
+Indexer crea un TamperManager por camera_id la primera vez que ve un
+frame de esa camara, con detectores BlackScreen + SceneChange por defecto.
+
+#### core/export/ — Exportadores polimorficos
+
+| Archivo | Responsabilidad |
+|---|---|
+| `base_exporter.py` | ABC `export(events, output_path) -> Path` |
+| `evidence_exporter.py` | ZIP forense + manifest.json + chain_of_custody.txt con SHA256 por archivo (validez legal) |
+| `pdf_reporter.py` | STUB: cuando se active reportlab, genera PDF ejecutivo |
+
+Estructura del ZIP forense:
+```
+evidence_2026-05-03.zip
+├── manifest.json              ← metadata global + lista eventos
+├── chain_of_custody.txt       ← SHA256 de cada archivo + fecha
+└── events/
+    ├── 0001_a1b2c3d4/
+    │   ├── event.json         ← metadata del evento
+    │   └── crop_xyz.jpg       ← thumbnail original
+    └── 0002_e5f6g7h8/
+        ├── event.json
+        └── crop_abc.jpg
+```
+
+#### core/recognition/ — STUB Tier 3
+
+```python
+class BaseRecognizer(ABC):
+    def load(self): ...
+    def unload(self): ...
+    def recognize(self, image_bgr) -> list[RecognitionResult]: ...
+
+class FaceRecognizer(BaseRecognizer):
+    """Stub. Activar con: uv add insightface onnxruntime-gpu"""
+```
+
+#### core/ocr/ — STUB Tier 3
+
+```python
+class BaseOCR(ABC): ...
+
+class PlateOCR(BaseOCR):
+    """Stub con regex de placas LATAM: ABC-123, AB1234, 123-ABC"""
+    PLATE_PATTERNS: list[re.Pattern]
+    @classmethod
+    def is_valid_plate(cls, text: str) -> bool: ...
+```
+
+### 15.5 Modulos nuevos en ui/widgets/
+
+| Archivo | Responsabilidad |
+|---|---|
+| `alert_badge.py` | Badge parpadeante reutilizable con `flash(text, color, duration_ms)` y QTimer |
+| `event_history_panel.py` | `_EventRow` (fila clickeable con thumbnail) + `_EventDetailDialog` + `EventHistoryPanel` (suscriptor del bus, max 50 eventos) |
+| `search_filter_bar.py` | `QComboBox` camaras + checkboxes clases + `QDateEdit` rango + `build_query()` que retorna `SearchQuery` tipado |
+
+### 15.6 Cambios en modulos existentes
+
+#### core/indexer.py
+- `process_single_frame()` ahora retorna `list[CropData]` (en lugar de int)
+  para que el StreamWorker pueda dibujar bboxes con la info completa
+- Llama a `_analyze_tamper()` antes de detectar (CPU-only, no requiere GPU)
+- Publica `SecurityEvent.DETECTION` al EventBus al final si hay crops
+- Mantiene `dict[camera_id, TamperManager]` con creacion lazy
+
+#### core/stream_capture.py
+- `capture_loop()` ahora acepta `on_preview` callback
+- Lee frames continuamente (~30fps), emite preview cada 100ms (10fps)
+- Procesa AI solo cada `interval_seconds` para no quemar GPU
+- Publica `CAMERA_CONNECTED` / `CAMERA_DISCONNECTED` al EventBus
+
+#### core/database.py
+- `search()` acepta `class_filter`, `camera_filter`, `date_from`, `date_to`
+- Construye `where` clause de ChromaDB con `$and / $in / $gte / $lte`
+- Filtros nativos en DB (rapido) en lugar de filtrado en Python (lento)
+
+#### core/searcher.py
+- `search_from_query(query: SearchQuery)` lee filtros del modelo tipado
+- Convierte `datetime` a timestamp UNIX para la DB
+
+#### models/search.py
+```python
+class SearchQuery(BaseModel):
+    text: str
+    n_results: int = 30
+    min_score: float = 0.0
+    class_filter: list[str] | None = None      # NUEVO: lista, no string
+    camera_filter: list[str] | None = None     # NUEVO
+    video_filter: str | None = None            # mantenido para compat
+    date_from: datetime | None = None          # NUEVO
+    date_to: datetime | None = None            # NUEVO
+```
+
+#### ui/widgets/camera_panel.py
+- `_CameraCard` agrega `AlertBadge` en la fila 1
+- Se suscribe al EventBus en `__init__`, filtra por su `camera_id`,
+  y ejecuta `alert_badge.flash()` segun severidad/tipo del evento
+- Visor en vivo con `update_preview(frame_bgr)` convirtiendo BGR→QPixmap
+
+#### ui/workers/stream_worker.py
+- Nuevo `Signal preview_frame(camera_id, ndarray)` para video en vivo
+- Cachea `_latest_crops` y dibuja bboxes con `cv2.rectangle` antes de
+  emitir cada preview (color por clase)
+
+#### ui/widgets/sidebar.py
+- 6 secciones (antes 4): Modelos, Indexar, Buscar, Camaras, **Eventos**, Estadisticas
+
+#### main.py
+- Singleton `EventBus.get_instance()` y `AlertManager.get_instance()`
+- `_setup_notifiers()` registra `TelegramNotifier()` (auto-disabled sin env)
+- `SearchPanel(database=self._db)` para que el filter bar tenga acceso a
+  las camaras existentes en la DB
+
+### 15.7 Cumplimiento SOLID — verificado
+
+```python
+# Test ejecutado en sesion:
+assert issubclass(TelegramNotifier, BaseNotifier)
+assert issubclass(BlackScreenDetector, BaseTamperDetector)
+assert issubclass(SceneChangeDetector, BaseTamperDetector)
+assert issubclass(EvidenceExporter, BaseExporter)
+assert issubclass(PdfReporter, BaseExporter)
+assert issubclass(FaceRecognizer, BaseRecognizer)
+assert issubclass(PlateOCR, BaseOCR)
+# Polimorfismo OK: todas las subclases respetan ABCs
+```
+
+| Principio | Como se aplica |
+|---|---|
+| **S**ingle Responsibility | 1 archivo = 1 clase = 1 funcion. EventBus solo enruta, AlertManager solo distribuye, BaseNotifier solo encapsula filtro+envio, etc. |
+| **O**pen/Closed | Agregar nuevo notifier/detector/exporter NO toca a su manager. Solo se hereda la ABC y se registra. |
+| **L**iskov | Subclases pueden reemplazar a su ABC sin romper el sistema. AlertManager itera sobre `BaseNotifier`, no sobre `TelegramNotifier`. |
+| **I**nterface Segregation | ABCs minimas: BaseNotifier solo tiene 1 metodo abstracto (`send`). BaseExporter idem (`export`). |
+| **D**ependency Inversion | Indexer, AlertManager, TamperManager dependen de ABCs (interfaces), no de implementaciones concretas. |
+
+### 15.8 Variables de entorno nuevas (.env)
+
+```env
+# HuggingFace para descargas mas rapidas (opcional)
+HF_TOKEN=hf_xxxxxxxxxx
+
+# Telegram para alertas push (opcional, deshabilitado si vacio)
+TELEGRAM_BOT_TOKEN=1234567890:ABCdefGhi...
+TELEGRAM_CHAT_ID=987654321
+
+# Silenciar warnings cosmeticos h264 SEI de camaras Tapo
+# (auto-set por settings.setup_model_environment)
+OPENCV_LOG_LEVEL=ERROR
+OPENCV_FFMPEG_LOGLEVEL=16
+```
+
+### 15.9 Roadmap de Tier 3 (interfaces listas)
+
+Para activar **reconocimiento facial**:
+```bash
+uv add insightface onnxruntime-gpu
+```
+Luego implementar `FaceRecognizer.load()` y `recognize()` (~50 lineas)
+usando `insightface.app.FaceAnalysis(name="buffalo_l")`.
+
+Para activar **OCR de placas**:
+```bash
+uv add paddleocr paddlepaddle-gpu
+```
+Luego implementar `PlateOCR.recognize()` con `PaddleOCR.ocr(...)` y
+filtrar resultados con `PlateOCR.is_valid_plate()`.
+
+Para activar **reportes PDF**:
+```bash
+uv add reportlab
+```
+Luego implementar `PdfReporter.export()` con `reportlab.platypus`
+(SimpleDocTemplate, Table, Image).
+
+### 15.10 Roadmap de Tier 4 (futuro)
+
+- Deteccion de comportamiento (loitering, peleas, caidas con YOLO-Pose)
+- Heatmap acumulativo de actividad por zona/hora
+- Re-identificacion cross-camera (OSNet) — la misma persona en cam01 y cam03
+- Multi-tenant + autenticacion (para SaaS)
+- ROI zones — polígonos dibujables sobre el frame
+- Grid 1/4/9 cámaras simultáneas en pantalla completa
+- Anti-tamper avanzado: BlurDetector (lente desenfocada deliberadamente)
