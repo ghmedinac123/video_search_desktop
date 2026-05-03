@@ -30,6 +30,12 @@ from models.camera import CameraConfig, CameraStatus
 from models.frame import FrameData
 from models.settings import get_settings
 
+# Silenciar warnings h264 SEI (propietarios de Tapo, no afectan video)
+try:
+    cv2.setLogLevel(1)  # 0=silent, 1=fatal, 2=error, 3=warning
+except AttributeError:
+    pass
+
 
 class StreamCapture:
     """
